@@ -1,20 +1,27 @@
-
 apiVersion: v1
-kind: Pod
+kind: Deployment
 metadata:
-  name: postgres
+  name: postgres-deployment
   labels:
     app: postgres
 spec:
-  containers:
-  - name: postgres
-    image: postgres:15
-    ports:
-    - containerPort: 5432
-    env:
-    - name: POSTGRES_USER
-      value: admin
-    - name: POSTGRES_PASSWORD
-      value: admin
-    - name: POSTGRES_DB
-      value: jobsdb
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      containers:
+      - name: postgres
+        image: postgres:18.3
+        ports:
+        - containerPort: 8080
+        env:
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: postgres-secret
+              key: postgres-password  
