@@ -3,9 +3,10 @@ kind: Service
 metadata:
   name: postgres-service
 spec:
+  clusterIP: None
   selector:
     app: postgres
   ports:
     - protocol: TCP
-      port: 8080
-      targetPort: 8080
+      port: 12345
+      targetPort: 5432
