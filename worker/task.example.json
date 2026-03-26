@@ -1,0 +1,13 @@
+{
+  "task_id": "job-3-map-1",
+  "task_type": "map",
+  "input_bucket": "betet",
+  "input_objects": [
+    "test_input.txt"
+  ],
+  "output_bucket": "betet",
+  "output_object": "results/job-3-map-1.json",
+  "parameters": {
+    "case_sensitive": false
+  }
+}
