@@ -87,7 +87,7 @@ def register_user(user: UserCreateRequest, db: Session = Depends(get_db)):
         )
     hashed_password = get_pwd_hash(user.password)
     db_user = Users(
-        name = user.name,
+        username = user.username,
         hashed_password = hashed_password,
         email = user.email,
         role = user.role
