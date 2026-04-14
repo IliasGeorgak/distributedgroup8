@@ -48,7 +48,7 @@ def verify_token(token:str) -> TokenData:
             )
         return TokenData(email=email, role=role)
     
-    except jwt.InvalidTokenError:
+    except InvalidTokenError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Could not verify user!",
