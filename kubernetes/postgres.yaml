@@ -71,10 +71,6 @@ spec:
         volumeMounts:
         - name: postgres-data
           mountPath: /var/lib/postgresql/data/pgdata
-        lifecycle:
-            postStart:
-              exec:
-                command: ["/bin/sh", "-c", {{}}]
   volumeClaimTemplates:
     - metadata:
         name: postgres-data
