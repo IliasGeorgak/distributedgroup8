@@ -1,7 +1,3 @@
-FROM postgres:16
+FROM postgres:latest
 
-WORKDIR
-COPY . .
-
-RUN chmod +x init.sh
-CMD["./init.sh"]
+COPY *.sql /docker-entrypoint-initdb.d/

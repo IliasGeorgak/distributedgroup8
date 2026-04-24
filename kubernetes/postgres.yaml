@@ -32,7 +32,7 @@ metadata:
   name: postgres-secret
 type: Opaque
 data:
-  postgres-password : cGFzczEyMwo= #pass123
+  POSTGRES_PASSWORD : cGFzczEyMwo= #pass123
 
 ---
 
@@ -56,18 +56,18 @@ spec:
     spec:
       containers:
       - name: postgres
-        image: postgres:latest
-        imagePullPolicy: IfNotPresent
+        image: db:latest
+        imagePullPolicy: Never
         ports:
         - containerPort: 5432
+        envFrom:
+        - secretRef:
+            name: postgres-secret
+        - configMapRef:
+            name: postgres-config
         env:
-        - name: POSTGRES_PASSWORD
-          valueFrom:
-            secretKeyRef:
-              name: postgres-secret
-              key: postgres-password 
         - name: PGDATA
-          value: /var/lib/postgresql/data/pgdata 
+          value: /var/lib/postgresql/data/pgdata
         volumeMounts:
         - name: postgres-data
           mountPath: /var/lib/postgresql/data/pgdata

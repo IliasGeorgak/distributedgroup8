@@ -9,7 +9,7 @@ host = os.environ["POSTGRES_HOST"]
 port = os.environ["POSTGRES_PORT"]
 user = os.environ["POSTGRES_USER"]
 db = os.environ["POSTGRES_DB"]
-password = os.environ["postgres-password"]
+password = os.environ["POSTGRES_PASSWORD"]
 SQLALCHEMY_DATABASE_URL = f"postgresql+psycopg2://{user}:{password}@{host}:{port}/{db}"
 
 engine = create_engine(SQLALCHEMY_DATABASE_URL)
