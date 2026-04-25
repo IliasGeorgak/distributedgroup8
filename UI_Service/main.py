@@ -105,8 +105,4 @@ def list_jobs(current_user=Depends(get_current_user)):
 
 @app.get("/admin/test")
 def admin_test(current_user=Depends(get_current_admin)):
-<<<<<<< HEAD
-    return {"message": "Admin access granted"} 
-=======
     return {"message": "Admin access granted"}
->>>>>>> 8dcdf32 (new cli operations for admins)
