@@ -46,7 +46,7 @@ def get_user(user_id:int, current_user:Users = Depends(get_current_admin), db:Se
     return user
 
 @app.post("/users", response_model=UserResponse)
-def create_user(user:UserCreateRequest, current_user:Users = Depends(get_current_user), db:Session = Depends(get_db)):
+def create_user(user:UserCreateRequest, current_user:Users = Depends(get_current_admin), db:Session = Depends(get_db)):
     if db.query(Users).filter(Users.email == user.email).first():
         raise HTTPException(status_code=404,detail="User already exists!")
 
@@ -83,7 +83,7 @@ def register_user(user: UserCreateRequest, db: Session = Depends(get_db)):
     if db.query(Users).filter(Users.email == user.email).first():
         raise HTTPException(
             status_code=404,
-            detail="User already created!0"
+            detail="User already created!"
         )
     hashed_password = get_pwd_hash(user.password)
     db_user = Users(
