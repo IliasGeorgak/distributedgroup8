@@ -2,9 +2,12 @@ from fastapi import FastAPI, Depends, HTTPException
 from schemas.auth import LoginRequest
 from dependencies.auth_client import get_current_user, get_current_admin
 import requests
+import os
 
-AUTH_SERVICE_URL = "http://localhost:8080"
-AUTH_SERVICE_LOGIN_URL = "http://localhost:8080/token"
+host = os.environ["AUTH_HOST"]
+port = os.environ["AUTH_PORT"]
+AUTH_SERVICE_URL = f"http://{host}:{port}"
+AUTH_SERVICE_LOGIN_URL = f"http://{host}:{port}/token"
 
 app = FastAPI()
 
