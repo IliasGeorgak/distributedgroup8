@@ -68,6 +68,30 @@ class Scheduler:
             "snapshot": self.master.snapshot(),
         }
 
+    def run_map_stage(self, map_tasks: list[dict[str, Any]]) -> dict[str, Any]:
+        if not map_tasks:
+            raise ValueError("map_tasks must be non-empty")
+
+        self.master.register_map_tasks(map_tasks)
+        map_results = self._drain_phase(task_type="map")
+        return {
+            "map_task_count": len(map_tasks),
+            "map_results": [str(path) for path in map_results],
+            "snapshot": self.master.snapshot(),
+        }
+
+    def run_reduce_stage(self, reduce_tasks: list[dict[str, Any]]) -> dict[str, Any]:
+        if not reduce_tasks:
+            raise ValueError("reduce_tasks must be non-empty")
+
+        self.master.register_reduce_tasks(reduce_tasks)
+        reduce_results = self._drain_phase(task_type="reduce")
+        return {
+            "reduce_task_count": len(reduce_tasks),
+            "reduce_results": [str(path) for path in reduce_results],
+            "snapshot": self.master.snapshot(),
+        }
+
     def _drain_phase(self, task_type: str) -> list[Path]:
         results: list[Path] = []
 

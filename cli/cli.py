@@ -20,6 +20,13 @@ def load_token() -> str | None:
     data = json.loads(TOKEN_FILE.read_text(encoding="utf-8"))
     return data.get("access_token")
 
+def get_auth_headers() -> dict[str, str] | None:
+    token = load_token()
+    if not token:
+        print("You are not logged in. Run: python cli.py auth login --username ... --password ...")
+        return None
+
+    return {"Authorization": f"Bearer {token}"}
 
 def login(username: str, password: str) -> None:
     response = requests.post(
@@ -40,28 +47,73 @@ def login(username: str, password: str) -> None:
     print("Login successful.")
     print("Token stored locally.")
 
-
 def jobs_list() -> None:
-    token = load_token()
-    if not token:
-        print("You are not logged in. Run: python cli.py auth login --username ... --password ...")
+    headers = get_auth_headers()
+    if headers is None:
         return
 
     response = requests.get(
         f"{UI_SERVICE_URL}/jobs",
-        headers={"Authorization": f"Bearer {token}"},
+        headers=headers,
         timeout=5,
     )
 
     print("Status:", response.status_code)
     print(response.text)
 
+def admin_create_user(username: str, password: str, email: str, role: str) -> None:
+    headers = get_auth_headers()
+    if headers is None:
+        return
+
+    payload = {
+        "username": username,
+        "password": password,
+        "email": email,
+        "role": role,
+    }
+
+    response = requests.post(
+        f"{UI_SERVICE_URL}/admin/users",
+        json=payload,
+        headers=headers,
+        timeout=5,
+    )
+
+    print("Status:", response.status_code)
+    print(response.text)
+
+def admin_delete_user(user_id: int) -> None:
+    headers = get_auth_headers()
+    if headers is None:
+        return
+    response = requests.delete(
+        f"{UI_SERVICE_URL}/users/{user_id}",
+        headers=headers,
+        timeout=5
+    )
+    
+    print("Status:", response.status_code)
+    print(response.text)
+    
+def admin_view_users() -> None:
+    headers = get_auth_headers()
+    if headers is None:
+        return
+
+    response = requests.get(
+        f"{UI_SERVICE_URL}/admin/users",
+        headers=headers,
+        timeout=5,
+    )
+
+    print("Status:", response.status_code)
+    print(response.text)
 
 def logout() -> None:
     if TOKEN_FILE.exists():
         TOKEN_FILE.unlink()
     print("Logged out.")
-
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="MapReduce CLI")
@@ -80,6 +132,20 @@ def main() -> None:
     jobs_subparsers = jobs_parser.add_subparsers(dest="jobs_command")
     jobs_subparsers.add_parser("list")
 
+    admin_parser = subparsers.add_parser("admin")
+    admin_subparsers = admin_parser.add_subparsers(dest="admin_command")
+
+    admin_create_user_parser = admin_subparsers.add_parser("create_user")
+    admin_create_user_parser.add_argument("--username", required=True)
+    admin_create_user_parser.add_argument("--password", required=True)
+    admin_create_user_parser.add_argument("--email", required=True)
+    admin_create_user_parser.add_argument("--role", required=True)
+
+    admin_delete_parser = admin_subparsers.add_parser("delete_user")
+    admin_delete_parser.add_argument("--user_id", required=True, type=int)
+    
+    admin_subparsers.add_parser("view_users")
+
     args = parser.parse_args()
 
     if args.command == "auth" and args.auth_command == "login":
@@ -88,6 +154,12 @@ def main() -> None:
         logout()
     elif args.command == "jobs" and args.jobs_command == "list":
         jobs_list()
+    elif args.command == "admin" and args.admin_command == "create_user":
+        admin_create_user(args.username, args.password, args.email, args.role)
+    elif args.command == "admin" and args.admin_command == "delete_user":
+        admin_delete_user(args.user_id)   
+    elif args.command == "admin" and args.admin_command == "view_users":
+        admin_view_users()
     else:
         parser.print_help()
 
