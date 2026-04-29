@@ -5,4 +5,4 @@ metadata:
   name: auth-config
 data:
   AUTH_HOST: auth-service
-  AUTH_PORT: "8081"
+  AUTH_PORT: "8080"
