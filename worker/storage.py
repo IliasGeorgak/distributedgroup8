@@ -3,12 +3,21 @@ from __future__ import annotations
 from pathlib import Path
 
 from minio import Minio
+import os 
 
+try:
+    url = os.environ["MINIO_SERVER_URL"]
+    access_key = os.environ["MINIO_ROOT_USER"]
+    secret_key = os.environ["MINIO_ROOT_PASSWORD"]
+except:
+    access_key ="admin"
+    secret_key ="password123"
+    url = "localhost:9000"
 
 client = Minio(
-    "localhost:9000",
-    access_key="admin",
-    secret_key="password123",
+    url,
+    access_key,
+    secret_key,
     secure=False,
 )
 

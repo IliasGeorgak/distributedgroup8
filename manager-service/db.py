@@ -3,15 +3,21 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import psycopg2
+import os
 
 
 @dataclass(slots=True)
 class DatabaseConfig:
-    host: str = "localhost"
+    """ host: str = "localhost"
     database: str = "jobsdb"
     user: str = "admin"
     password: str = "admin"
-    port: int = 5432
+    port: int = 5432 """
+    host: str = os.environ["POSTGRES_HOST"]
+    database: str = os.environ["POSTGRES_JOBS_DB"]
+    user: str = os.environ["POSTGRES_USER"]
+    password: str = os.environ["POSTGRES_PASSWORD"]
+    port: int = os.environ["POSTGRES_PORT"]
 
 
 class Database:

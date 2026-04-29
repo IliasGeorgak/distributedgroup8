@@ -8,3 +8,4 @@ data:
   PGDATA: /var/lib/postgresql/data/pgdata
   POSTGRES_USER: postgres
   POSTGRES_DB: auth_db
+  POSTGRES_JOBS_DB: jobsdb

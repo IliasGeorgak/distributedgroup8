@@ -18,15 +18,17 @@ spec:
       - name: manager
         image: localtest
         imagePullPolicy: Never
-        command: ["python3"]
-        args: ["db_test.py"]
         ports:
         - containerPort: 8000
         envFrom:
         - secretRef:
             name: postgres-secret
+        - secretRef:
+            name: minio-secret
         - configMapRef:
             name: postgres-config
+        - configMapRef:
+            name: minio-config
         resources:
           requests:
             memory: "128Mi"
@@ -45,6 +47,6 @@ spec:
     app: manager
   ports:
     - protocol: TCP
-      port: 80
+      port: 8000
       targetPort: 8000
   type: ClusterIP

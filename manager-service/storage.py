@@ -4,14 +4,20 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from minio import Minio
+import os
 
 
 @dataclass(slots=True)
 class MinioConfig:
-    endpoint: str = "localhost:9000"
+    """endpoint: str = "localhost:9000"
     access_key: str = "admin"
     secret_key: str = "password123"
+    secure: bool = False  """
+    endpoint: str = os.environ["MINIO_SERVER_URL"]
+    access_key: str = os.environ["MINIO_ROOT_USER"]
+    secret_key: str = os.environ["MINIO_ROOT_PASSWORD"]
     secure: bool = False
+  
 
 
 class MinioStorage:
