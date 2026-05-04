@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import json
+import time
 from collections import defaultdict
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from db import Database
 from scheduler import Scheduler
@@ -14,6 +15,45 @@ class ManagerService:
     def __init__(self, database: Database | None = None, storage: MinioStorage | None = None) -> None:
         self.database = database or Database()
         self.storage = storage or MinioStorage()
+
+    def schedule_pending_tasks(
+        self,
+        task_type: str = "map",
+        launch_worker: Callable[[dict[str, Any]], None] | None = None,
+    ) -> int:
+        pending_tasks = self.database.get_pending_tasks(task_type)
+
+        for task in pending_tasks:
+            task_id = int(task["task_id"])
+            self.database.update_task_status(task_id, "running")
+
+            try:
+                if launch_worker is None:
+                    self.launch_worker_for_task(task)
+                else:
+                    launch_worker(task)
+            except Exception:
+                self.database.mark_task_failed(task_id)
+                raise
+
+        return len(pending_tasks)
+
+    def scheduling_loop(
+        self,
+        task_type: str = "map",
+        poll_interval_seconds: float = 5.0,
+        launch_worker: Callable[[dict[str, Any]], None] | None = None,
+    ) -> None:
+        while True:
+            scheduled_count = self.schedule_pending_tasks(
+                task_type=task_type,
+                launch_worker=launch_worker,
+            )
+            if scheduled_count == 0:
+                time.sleep(poll_interval_seconds)
+
+    def launch_worker_for_task(self, task: dict[str, Any]) -> None:
+        print(f"Launching worker for {task['task_type']} task {task['task_id']}")
 
     def bootstrap(self, default_bucket: str, seed_task_count: int = 3) -> int:
         db_test_result = self.database.test_connection()
