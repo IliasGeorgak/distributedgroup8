@@ -47,6 +47,22 @@ def login(username: str, password: str) -> None:
     print("Login successful.")
     print("Token stored locally.")
 
+def register(username: str, password: str, email: str) -> None:
+    payload = {
+        "username": username,
+        "password": password,
+        "email": email,
+    }
+
+    response = requests.post(
+        f"{UI_SERVICE_URL}/auth/register",
+        json=payload,
+        timeout=5,
+    )
+
+    print("Status:", response.status_code)
+    print(response.text)
+
 def jobs_list() -> None:
     headers = get_auth_headers()
     if headers is None:
@@ -128,6 +144,11 @@ def main() -> None:
 
     auth_subparsers.add_parser("logout")
 
+    register_parser = auth_subparsers.add_parser("register")
+    register_parser.add_argument("--username", required=True)
+    register_parser.add_argument("--password", required=True)
+    register_parser.add_argument("--email", required=True)
+
     jobs_parser = subparsers.add_parser("jobs")
     jobs_subparsers = jobs_parser.add_subparsers(dest="jobs_command")
     jobs_subparsers.add_parser("list")
@@ -152,6 +173,8 @@ def main() -> None:
         login(args.username, args.password)
     elif args.command == "auth" and args.auth_command == "logout":
         logout()
+    elif args.command == 'auth' and args.auth_command == "register":
+        register(args.username, args.password, args.email)
     elif args.command == "jobs" and args.jobs_command == "list":
         jobs_list()
     elif args.command == "admin" and args.admin_command == "create_user":

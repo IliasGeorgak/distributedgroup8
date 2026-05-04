@@ -3,7 +3,7 @@ from fastapi.security import OAuth2PasswordRequestForm
 from database import Base, engine, get_db
 from sqlalchemy.orm import Session
 from models import Users
-from schemas.user import UserResponse, UserCreateRequest
+from schemas.user import UserResponse, UserCreateRequest, UserCreateRequest2
 from schemas.token import Token
 from typing import List
 from oauth2 import get_pwd_hash, verify_pwd, create_access_token, get_current_user, get_current_admin
@@ -79,7 +79,7 @@ def get_all_users(current_user:Users = Depends(get_current_admin), db:Session = 
     return db.query(Users).all()
 
 @app.post("/register", response_model=UserResponse)
-def register_user(user: UserCreateRequest, db: Session = Depends(get_db)):
+def register_user(user: UserCreateRequest2, db: Session = Depends(get_db)):
     if db.query(Users).filter(Users.email == user.email).first():
         raise HTTPException(
             status_code=404,
@@ -90,7 +90,6 @@ def register_user(user: UserCreateRequest, db: Session = Depends(get_db)):
         username = user.username,
         hashed_password = hashed_password,
         email = user.email,
-        role = user.role
     )
     db.add(db_user)
     db.commit()

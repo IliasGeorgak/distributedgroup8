@@ -1,20 +1,39 @@
 from fastapi import FastAPI, Depends, HTTPException, Header
-from schemas.auth import LoginRequest, UserCreateRequest
+from schemas.auth import LoginRequest, UserCreateRequest, UserCreateRequest2
 from dependencies.auth_client import get_current_user, get_current_admin
+from dotenv import load_dotenv
 import requests
 import os
+
+load_dotenv()
 
 host = os.environ["AUTH_HOST"]
 port = os.environ["AUTH_PORT"]
 AUTH_SERVICE_URL = f"http://{host}:{port}"
 AUTH_SERVICE_LOGIN_URL = f"http://{host}:{port}/token"
-
+AUTH_SERVICE_REGISTER_URL = f"http://{host}:{port}/register"
 
 app = FastAPI()
 
 @app.get("/")
 def home():
     return {"Hello":"World"}
+
+@app.post("/auth/register")
+def register(data: UserCreateRequest2):
+    try:
+        response = requests.post(
+            f"{AUTH_SERVICE_REGISTER_URL}",
+            json=data.model_dump(),   
+            timeout=5,
+        )
+    except requests.RequestException:
+        raise HTTPException(status_code=503, detail="Authentication service unavailable")
+
+    if response.status_code != 200:
+        raise HTTPException(status_code=response.status_code, detail=response.text)
+
+    return response.json()
 
 @app.post("/auth/login")
 def login(data: LoginRequest):

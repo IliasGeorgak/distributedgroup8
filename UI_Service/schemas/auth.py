@@ -14,3 +14,7 @@ class UserCreateRequest(BaseModel):
     email: str
     role: str
     
+class UserCreateRequest2(BaseModel):
+    username: str
+    password: str
+    email: str
