@@ -1,4 +1,4 @@
-from database import Base
+from app.database.database import Base
 from sqlalchemy import Column, Integer, String, TIMESTAMP, text
 
 class Users(Base):

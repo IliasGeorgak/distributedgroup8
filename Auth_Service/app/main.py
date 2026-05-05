@@ -1,14 +1,14 @@
 from fastapi import FastAPI, Depends, HTTPException
 from fastapi.security import OAuth2PasswordRequestForm
-from database import Base, engine, get_db
+from app.database.database import Base, engine, get_db
 from sqlalchemy.orm import Session
-from models import Users
-from schemas.user import UserResponse, UserCreateRequest, UserCreateRequest2
-from schemas.token import Token
+from app.models import Users
+from app.schemas.user import UserResponse, UserCreateRequest, UserCreateRequest2
+from app.schemas.token import Token
 from typing import List
-from oauth2 import get_pwd_hash, verify_pwd, create_access_token, get_current_user, get_current_admin
+from app.core.oauth2 import get_pwd_hash, verify_pwd, create_access_token, get_current_user, get_current_admin
 from datetime import timedelta, timezone, datetime
-from config import settings 
+from app.config import settings 
 
 
 
@@ -67,7 +67,7 @@ def delete_user(user_id:int, current_user:Users = Depends(get_current_admin), db
     db_user = db.query(Users).filter(Users.id == user_id).first()
     if not db_user:
         raise HTTPException(status_code=404, detail="User not found!")
-    if db_user.id == user_id:
+    if current_user.id == user_id:
         raise HTTPException(status_code=404,detail="Cannot delete current user!")
     
     db.delete(db_user)

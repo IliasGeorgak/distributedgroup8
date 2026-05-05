@@ -1,6 +1,6 @@
 from fastapi import FastAPI, Depends, HTTPException, Header
-from schemas.auth import LoginRequest, UserCreateRequest, UserCreateRequest2
-from dependencies.auth_client import get_current_user, get_current_admin
+from app.schemas.auth import LoginRequest, UserCreateRequest, UserCreateRequest2
+from app.core.auth_client import get_current_user, get_current_admin
 from dotenv import load_dotenv
 import requests
 import os
@@ -92,7 +92,7 @@ def create_user(user:UserCreateRequest,
 
     
 
-@app.delete("admin/users/{user_id}")
+@app.delete("/admin/users/{user_id}")
 def delete_user(
         user_id:int,
         current_user=Depends(get_current_admin),

@@ -1,7 +1,13 @@
 from fastapi import Header, HTTPException, Depends, status
-import requests
+from dotenv import load_dotenv
+import requests, os
 
-AUTH_SERVICE_VALIDATE_URL = "http://localhost:8080/validate"
+load_dotenv()
+
+host = os.environ["AUTH_HOST"]
+port = os.environ["AUTH_PORT"]
+
+AUTH_SERVICE_VALIDATE_URL = f"http://{host}:{port}/validate"
 
 def get_current_user(authorization: str | None = Header(default=None)):
     if not authorization or not authorization.startswith("Bearer "):

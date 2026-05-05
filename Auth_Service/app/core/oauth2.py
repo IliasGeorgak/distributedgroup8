@@ -3,11 +3,11 @@ from passlib.context import CryptContext
 from fastapi.security import OAuth2PasswordBearer
 from datetime import timedelta, timezone, datetime
 from typing import Optional
-from config import settings
-from schemas.token import TokenData
-from database import get_db
+from app.config import settings
+from app.schemas.token import TokenData
+from app.database.database import get_db
 from sqlalchemy.orm import Session
-from models import Users
+from app.models.users import Users
 import jwt
 from jwt.exceptions import InvalidTokenError
 
