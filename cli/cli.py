@@ -48,6 +48,11 @@ def login(username: str, password: str) -> None:
     print("Token stored locally.")
 
 def register(username: str, password: str, email: str) -> None:
+    
+    if load_token():
+        print("You are already logged in! Log out to register as new user!")
+        return
+    
     payload = {
         "username": username,
         "password": password,
