@@ -9,7 +9,7 @@ from master import TaskRecord
 import os
 
 class Kuber:
-    def __init__(self, namespace: str = "default",image: str = "python:3.9-slim") -> None:
+    def __init__(self, namespace: str = "default",image: str = "worker") -> None:
         try:
             config.load_kube_config() #load local cluster configuration
         except:
@@ -20,10 +20,6 @@ class Kuber:
         self.batch = client.BatchV1Api()
         self.core = client.CoreV1Api()
         
-    def apply_worker(self, path):
-        utils.create_from_yaml(self.batch, path)
-        os.remove(path)
-
     def create_worker(self, rendered_yaml: str) -> str:
 
         try:
@@ -37,13 +33,13 @@ class Kuber:
         except utils.FailToCreateError as e:
             print(f"Failed to create job: {e}")
 
-    def render_worker_yaml(self, task_metadata: dict[str, TaskRecord], image: str = None) -> str:
+    def render_worker_yaml(self, task_metadata: TaskRecord, image: str = None) -> str:
         if image is None:
             image = self.image
         # Load job template
         with open("sample_job.yaml") as f:
             template = Template(f.read())
-        worker_id = task_metadata["worker_id"]
+        worker_id = task_metadata.worker_id
         args = self.build_args(task_metadata, worker_id)
 
         # Render YAML with dynamic values
@@ -54,8 +50,8 @@ class Kuber:
         )
         return rendered_yaml
 
-    def build_args(self, task_metadata: dict[str, TaskRecord], worker_id: str) -> list[str]:
-        task_json = json.dumps(task_metadata["payload"])
+    def build_args(self, task_metadata: TaskRecord, worker_id: str) -> list[str]:
+        task_json = json.dumps(task_metadata.payload)
 
         return [
             "--task-json",
@@ -92,19 +88,18 @@ class Kuber:
         pod_name = self.get_job_pod_name(job_name)
         return self.core.read_namespaced_pod_log(pod_name, self.namespace)
 
-    def check_task_success(self, job_name: str,task_metadata: dict[str, TaskRecord]) -> bool:
+    def check_task_success(self, job_name: str,task_metadata: TaskRecord) -> bool:
         logs = self.get_logs(job_name)
         # return task_metadata[""] in logs
         return True
 
-    def exec(self,task_metadata: dict[str, TaskRecord]) -> str:
+    def exec(self,task_metadata: TaskRecord) -> bool:
         rendered_yaml = self.render_worker_yaml(task_metadata)
         job_name = self.create_worker(rendered_yaml)
         if self.wait_for_job_completion(job_name):
-            logs = self.get_logs(job_name)
-            return logs
+            return True
         else:
-            raise Exception("Job failed")
+            return False
 
 if __name__ == "__main__":
     kuber = Kuber()

@@ -14,9 +14,9 @@ class Scheduler:
         self.master = Master()
         self.kuber = Kuber()
 
-    def execute_task(self, task:dict[str, TaskRecord]) -> Path:
-        self.kuber.exec(task)
-        return Path("result.json")
+    def execute_task(self, task:TaskRecord) -> bool:
+       return self.kuber.exec(task)
+        
     
     def run_job(
         self,
