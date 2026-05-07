@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from minio import Minio
+from minio import Minio, S3Error
 import os
 
 
@@ -40,3 +40,14 @@ class MinioStorage:
     def upload_file(self, bucket_name: str, object_name: str, file_path: str | Path) -> None:
         self.ensure_bucket(bucket_name)
         self.client.fput_object(bucket_name, object_name, str(file_path))
+
+    def object_exists(self, bucket: str, obj: str) -> bool:
+        try:
+            self.client.stat_object(bucket, obj)
+            return True
+
+        except S3Error as e:
+            if e.code == "NoSuchKey":
+                return False
+
+            raise

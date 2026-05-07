@@ -5,21 +5,23 @@ from typing import Any
 
 from kubernetes import client, config, utils
 from jinja2 import Template
+from master import TaskRecord
 import os
 
 class Kuber:
-    def __init__(self, namespace: str = "default"):
+    def __init__(self, namespace: str = "default",image: str = "python:3.9-slim") -> None:
         try:
             config.load_kube_config() #load local cluster configuration
         except:
             config.load_incluster_config() #same but for actual clusters
         self.namespace = namespace
+        self.image = image
         self.api_client = client.ApiClient()
         self.batch = client.BatchV1Api()
         self.core = client.CoreV1Api()
         
     def apply_worker(self, path):
-        utils.create_from_yaml(self.k8s_client, path)
+        utils.create_from_yaml(self.batch, path)
         os.remove(path)
 
     def create_worker(self, rendered_yaml: str) -> str:
@@ -35,11 +37,13 @@ class Kuber:
         except utils.FailToCreateError as e:
             print(f"Failed to create job: {e}")
 
-    def render_worker_yaml(self, worker_id: str, image: str, task_metadata: dict[str, Any]) -> str:
+    def render_worker_yaml(self, task_metadata: dict[str, TaskRecord], image: str = None) -> str:
+        if image is None:
+            image = self.image
         # Load job template
         with open("sample_job.yaml") as f:
             template = Template(f.read())
-
+        worker_id = task_metadata["worker_id"]
         args = self.build_args(task_metadata, worker_id)
 
         # Render YAML with dynamic values
@@ -50,8 +54,8 @@ class Kuber:
         )
         return rendered_yaml
 
-    def build_args(self, task_metadata: dict[str, Any], worker_id: str) -> list[str]:
-        task_json = json.dumps(task_metadata)
+    def build_args(self, task_metadata: dict[str, TaskRecord], worker_id: str) -> list[str]:
+        task_json = json.dumps(task_metadata["payload"])
 
         return [
             "--task-json",
@@ -88,10 +92,19 @@ class Kuber:
         pod_name = self.get_job_pod_name(job_name)
         return self.core.read_namespaced_pod_log(pod_name, self.namespace)
 
-    def check_task_success(self, job_name: str,task_metadata: dict[str, Any]) -> bool:
+    def check_task_success(self, job_name: str,task_metadata: dict[str, TaskRecord]) -> bool:
         logs = self.get_logs(job_name)
         # return task_metadata[""] in logs
         return True
+
+    def exec(self,task_metadata: dict[str, TaskRecord]) -> str:
+        rendered_yaml = self.render_worker_yaml(task_metadata)
+        job_name = self.create_worker(rendered_yaml)
+        if self.wait_for_job_completion(job_name):
+            logs = self.get_logs(job_name)
+            return logs
+        else:
+            raise Exception("Job failed")
 
 if __name__ == "__main__":
     kuber = Kuber()
