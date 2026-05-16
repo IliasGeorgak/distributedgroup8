@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from minio import Minio
 import os
@@ -40,3 +42,20 @@ class MinioStorage:
     def upload_file(self, bucket_name: str, object_name: str, file_path: str | Path) -> None:
         self.ensure_bucket(bucket_name)
         self.client.fput_object(bucket_name, object_name, str(file_path))
+
+    def list_objects(self, bucket_name: str, prefix: str) -> list[str]:
+        objects = self.client.list_objects(bucket_name, prefix=prefix, recursive=True)
+        return [obj.object_name for obj in objects if obj.object_name is not None]
+
+    def download_json(self, bucket_name: str, object_name: str) -> dict[str, Any]:
+        response = self.client.get_object(bucket_name, object_name)
+        try:
+            raw_content = response.read().decode("utf-8")
+            payload = json.loads(raw_content)
+        finally:
+            response.close()
+            response.release_conn()
+
+        if not isinstance(payload, dict):
+            raise ValueError(f"Object '{object_name}' does not contain a JSON object")
+        return payload

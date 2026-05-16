@@ -82,6 +82,62 @@ def jobs_list() -> None:
     print("Status:", response.status_code)
     print(response.text)
 
+def jobs_submit(input_file: str, split_count: int, r_partitions: int, case_sensitive: bool) -> None:
+    headers = get_auth_headers()
+    if headers is None:
+        return
+
+    input_path = Path(input_file)
+    if not input_path.exists():
+        print(f"Input file does not exist: {input_path}")
+        return
+
+    with input_path.open("rb") as file:
+        response = requests.post(
+            f"{UI_SERVICE_URL}/jobs/submit_job",
+            headers=headers,
+            files={
+                "input_file": (input_path.name, file, "text/plain"),
+            },
+            data={
+                "split_count": str(split_count),
+                "r_partitions": str(r_partitions),
+                "case_sensitive": str(case_sensitive).lower(),
+            },
+            timeout=30,
+        )
+
+    print("Status:", response.status_code)
+    print(response.text)
+
+def jobs_status(job_id: int) -> None:
+    headers = get_auth_headers()
+    if headers is None:
+        return
+
+    response = requests.get(
+        f"{UI_SERVICE_URL}/jobs/{job_id}",
+        headers=headers,
+        timeout=5,
+    )
+
+    print("Status:", response.status_code)
+    print(response.text)
+
+def jobs_results(job_id: int) -> None:
+    headers = get_auth_headers()
+    if headers is None:
+        return
+
+    response = requests.get(
+        f"{UI_SERVICE_URL}/jobs/{job_id}/results",
+        headers=headers,
+        timeout=10,
+    )
+
+    print("Status:", response.status_code)
+    print(response.text)
+
 def admin_create_user(username: str, password: str, email: str, role: str) -> None:
     headers = get_auth_headers()
     if headers is None:
@@ -158,6 +214,18 @@ def main() -> None:
     jobs_subparsers = jobs_parser.add_subparsers(dest="jobs_command")
     jobs_subparsers.add_parser("list")
 
+    jobs_submit_parser = jobs_subparsers.add_parser("submit")
+    jobs_submit_parser.add_argument("--input_file", required=True)
+    jobs_submit_parser.add_argument("--split_count", type=int, default=4)
+    jobs_submit_parser.add_argument("--r_partitions", type=int, default=3)
+    jobs_submit_parser.add_argument("--case_sensitive", action="store_true")
+
+    jobs_status_parser = jobs_subparsers.add_parser("status")
+    jobs_status_parser.add_argument("--job_id", required=True, type=int)
+
+    jobs_results_parser = jobs_subparsers.add_parser("results")
+    jobs_results_parser.add_argument("--job_id", required=True, type=int)
+
     admin_parser = subparsers.add_parser("admin")
     admin_subparsers = admin_parser.add_subparsers(dest="admin_command")
 
@@ -188,9 +256,19 @@ def main() -> None:
         admin_delete_user(args.user_id)   
     elif args.command == "admin" and args.admin_command == "view_users":
         admin_view_users()
+    elif args.command == "jobs" and args.jobs_command == "submit":
+        jobs_submit(
+            args.input_file,
+            args.split_count,
+            args.r_partitions,
+            args.case_sensitive,
+        )
+    elif args.command == "jobs" and args.jobs_command == "status":
+        jobs_status(args.job_id)
+    elif args.command == "jobs" and args.jobs_command == "results":
+        jobs_results(args.job_id)
     else:
         parser.print_help()
-
 
 if __name__ == "__main__":
     main()

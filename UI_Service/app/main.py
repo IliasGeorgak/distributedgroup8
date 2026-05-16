@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Depends, HTTPException, Header
+from fastapi import FastAPI, Depends, HTTPException, Header, UploadFile, Form, File
 from app.schemas.auth import LoginRequest, UserCreateRequest, UserCreateRequest2
 from app.core.auth_client import get_current_user, get_current_admin
 from dotenv import load_dotenv
@@ -7,11 +7,14 @@ import os
 
 load_dotenv()
 
-host = os.environ["AUTH_HOST"]
-port = os.environ["AUTH_PORT"]
+host = os.environ["AUTH_HOST"] 
+port = os.environ["AUTH_PORT"] #8080
+man_port = os.environ["MAN_PORT"] #8082
 AUTH_SERVICE_URL = f"http://{host}:{port}"
 AUTH_SERVICE_LOGIN_URL = f"http://{host}:{port}/token"
 AUTH_SERVICE_REGISTER_URL = f"http://{host}:{port}/register"
+MANAGER_SERVICE_URL = f"http://{host}:{man_port}"
+# MANAGER_SERVICE_URL = os.getenv("MANAGER_SERVICE_URL", "http://manager-service:8000") # for kuber
 
 app = FastAPI()
 
@@ -91,7 +94,6 @@ def create_user(user:UserCreateRequest,
     return response.json()
 
     
-
 @app.delete("/admin/users/{user_id}")
 def delete_user(
         user_id:int,
@@ -113,6 +115,74 @@ def delete_user(
     
     return response.json()
 
+@app.post("/jobs/submit_job")
+def submit_job(
+    input_file: UploadFile = File(...),
+    split_count: int = Form(4),
+    r_partitions: int = Form(3),
+    case_sensitive: bool = Form(False),
+    current_user=Depends(get_current_user),
+):
+    try:
+        response = requests.post(
+            f"{MANAGER_SERVICE_URL}/jobs/submit_job",
+            files={
+                "input_file": (
+                    input_file.filename,
+                    input_file.file,
+                    input_file.content_type or "text/plain",
+                )
+            },
+            data={
+                "split_count": str(split_count),
+                "r_partitions": str(r_partitions),
+                "case_sensitive": str(case_sensitive).lower(),
+            },
+            timeout=30,
+        )
+    except requests.RequestException:
+        raise HTTPException(status_code=503, detail="Manager service unavailable")
+
+    if response.status_code != 200:
+        raise HTTPException(status_code=response.status_code, detail=response.text)
+
+    return response.json()
+
+@app.get("/jobs/{job_id}")
+def get_job_status(
+    job_id: int,
+    current_user=Depends(get_current_user),
+):
+    try:
+        response = requests.get(
+            f"{MANAGER_SERVICE_URL}/jobs/{job_id}",
+            timeout=5,
+        )
+    except requests.RequestException:
+        raise HTTPException(status_code=503, detail="Manager service unavailable")
+
+    if response.status_code != 200:
+        raise HTTPException(status_code=response.status_code, detail=response.text)
+
+    return response.json()
+
+@app.get("/jobs/{job_id}/results")
+def get_job_results(
+    job_id: int,
+    current_user=Depends(get_current_user),
+):
+    try:
+        response = requests.get(
+            f"{MANAGER_SERVICE_URL}/jobs/{job_id}/results",
+            timeout=10,
+        )
+    except requests.RequestException:
+        raise HTTPException(status_code=503, detail="Manager service unavailable")
+
+    if response.status_code != 200:
+        raise HTTPException(status_code=response.status_code, detail=response.text)
+
+    return response.json()
 
 @app.get("/profile")
 def profile(current_user=Depends(get_current_user)):

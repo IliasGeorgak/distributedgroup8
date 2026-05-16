@@ -210,3 +210,71 @@ class Database:
             "worker_id": row[4],
             "retry_count": row[5],
         }
+    def get_job_status(self, job_id: int) -> dict:
+        with self.get_connection() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT job_id, status, created_at
+                    FROM jobs
+                    WHERE job_id = %s
+                    """,
+                    (job_id,),
+                )
+                row = cursor.fetchone()
+
+            if row is None:
+                raise ValueError(f"Unknown job_id '{job_id}")
+            
+            return {
+                "job_id": row[0],
+                "status": row[1],
+                "created_at": row[2]
+            }
+        
+    def get_job_tasks_status(self, job_id: int) -> dict:
+        with self.get_connection() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT 
+                    j.job_id,
+                    j.status as job_status,
+                    j.created_at,
+                    t.task_type,
+                    t.status AS task_status,
+                    COUNT(t.task_id) AS task_count
+                    FROM jobs j
+                    LEFT JOIN tasks t ON j.job_id = t.job_id
+                    WHERE j.job_id = %s
+                    GROUP BY
+                        j.job_id,
+                        j.status,
+                        j.created_at,
+                        t.task_type,
+                        t.status;
+                    """,
+                    (job_id,),
+
+                )
+                rows = cursor.fetchall()
+        
+        if not rows:
+            raise ValueError(f"Job {job_id} not found!")
+
+        first = rows[0]
+
+        return {
+            "job_id": first[0],
+            "status": first[1],
+            "created_at": first[2],
+            "tasks": [
+                {
+                    "task_type": row[3],
+                    "status": row[4],
+                    "count": row[5]
+                }
+                for row in rows
+                if row[3] is not None            
+            ],
+        }

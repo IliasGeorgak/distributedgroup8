@@ -6,3 +6,4 @@ __pycache__/
 *.log
 .codex
 .mapreduce_token.json
+.VSCodeCounter/

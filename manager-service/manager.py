@@ -228,6 +228,23 @@ class ManagerService:
         )
         return result
 
+    def get_job_results(self, job_id: int, bucket_name: str) -> dict[str, Any]:
+        prefix = f"results/job-{job_id}-reduce-"
+        result_objects = sorted(self.storage.list_objects(bucket_name, prefix=prefix))
+
+        return {
+            "job_id": job_id,
+            "bucket": bucket_name,
+            "result_count": len(result_objects),
+            "results": [
+                {
+                    "object": object_name,
+                    "data": self.storage.download_json(bucket_name, object_name),
+                }
+                for object_name in result_objects
+            ],
+        }
+
     def collect_shuffle_partition_objects(
         self,
         map_result_paths: list[str | Path],
