@@ -10,7 +10,6 @@ from db import Database
 from scheduler import Scheduler
 from storage import MinioStorage
 
-
 class ManagerService:
     def __init__(self, database: Database | None = None, storage: MinioStorage | None = None) -> None:
         self.database = database or Database()
@@ -206,8 +205,8 @@ class ManagerService:
         print(f"Wrote task metadata to {destination_path}")
         return destination_path
 
-    def run_map_stage(self, map_tasks: list[dict[str, Any]], worker_ids: list[str]) -> dict[str, Any]:
-        scheduler = Scheduler(worker_ids=worker_ids)
+    def run_map_stage(self, map_tasks: list[dict[str, Any]]) -> dict[str, Any]:
+        scheduler = Scheduler()
         result = scheduler.run_map_stage(map_tasks)
         print(
             "Map stage completed:",
@@ -218,9 +217,8 @@ class ManagerService:
     def run_reduce_stage(
         self,
         reduce_tasks: list[dict[str, Any]],
-        worker_ids: list[str],
     ) -> dict[str, Any]:
-        scheduler = Scheduler(worker_ids=worker_ids)
+        scheduler = Scheduler()
         result = scheduler.run_reduce_stage(reduce_tasks)
         print(
             "Reduce stage completed:",
@@ -363,7 +361,7 @@ class ManagerService:
             self.write_task_file(worker_dir / f"task.map.{index}.json", task_metadata)
         (worker_dir / "task.maps.json").write_text(json.dumps(map_tasks, indent=2), encoding="utf-8")
 
-        map_stage_result = self.run_map_stage(map_tasks=map_tasks, worker_ids=worker_ids)
+        map_stage_result = self.run_map_stage(map_tasks=map_tasks)
         (worker_dir / "map.stage.result.json").write_text(json.dumps(map_stage_result, indent=2), encoding="utf-8")
 
         if not self._stage_completed(map_stage_result["snapshot"], "map"):
@@ -385,7 +383,7 @@ class ManagerService:
             self.write_task_file(worker_dir / f"task.reduce.{index}.json", task_metadata)
         (worker_dir / "task.reduces.json").write_text(json.dumps(reduce_tasks, indent=2), encoding="utf-8")
 
-        reduce_stage_result = self.run_reduce_stage(reduce_tasks=reduce_tasks, worker_ids=worker_ids)
+        reduce_stage_result = self.run_reduce_stage(reduce_tasks=reduce_tasks)
         (worker_dir / "reduce.stage.result.json").write_text(
             json.dumps(reduce_stage_result, indent=2), encoding="utf-8"
         )
@@ -407,7 +405,6 @@ def main() -> None:
     bucket_name = "betet"
     input_file = Path(__file__).with_name("test_input.txt")
     split_count = 4
-    worker_ids = ["worker-1", "worker-2", "worker-3"]
     r_partitions = 3
     partition_function = "md5"
 

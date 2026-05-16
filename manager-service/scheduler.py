@@ -6,23 +6,18 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
-
-ROOT_DIR = Path(__file__).resolve().parent.parent
-WORKER_DIR = ROOT_DIR / "worker"
-if str(WORKER_DIR) not in sys.path:
-    sys.path.insert(0, str(WORKER_DIR))
-
 from master import Master, TaskRecord, TaskState
-from worker import Worker
-
+from k8 import Kuber   
 
 class Scheduler:
-    def __init__(self, worker_ids: list[str]) -> None:
-        if not worker_ids:
-            raise ValueError("worker_ids must be a non-empty list")
+    def __init__(self) -> None:
         self.master = Master()
-        self.workers = [Worker(worker_id=worker_id) for worker_id in worker_ids]
+        self.kuber = Kuber()
 
+    def execute_task(self, task:TaskRecord) -> bool:
+       return self.kuber.exec(task)
+        
+    
     def run_job(
         self,
         job_id: str,
@@ -97,16 +92,14 @@ class Scheduler:
 
         while not self._phase_completed(task_type):
             progress_made = False
+            if task_type == "map":
+                task_rec = self.master.assign_map_task()
+            elif task_type == "reduce":
+                task_rec = self.master.assign_reduce_task()
+            else:
+                raise ValueError("task_type must be 'map' or 'reduce'")
 
-            for worker in self.workers:
-                if task_type == "map":
-                    output_path = worker.run_assigned_map_task(self.master)
-                elif task_type == "reduce":
-                    output_path = worker.run_assigned_reduce_task(self.master)
-                else:
-                    raise ValueError("task_type must be 'map' or 'reduce'")
-
-                if output_path is not None:
+            if self.execute_task(task_rec):
                     progress_made = True
                     results.append(output_path)
 
