@@ -29,7 +29,7 @@ def _partition_records(records: list[str], split_count: int) -> list[list[str]]:
         size = base_size + (1 if split_id < remainder else 0)
         end = start + size
         partitions.append(records[start:end])
-        start = end
+        start = end 
 
     return partitions
 

@@ -16,8 +16,7 @@ PARTITION_FUNCTIONS: dict[str, Callable[[str], int]] = {
 
 
 def _extract_intermediate_pairs(payload: Any, source_path: Path) -> tuple[int, list[tuple[str, int]]]:
-    # Shuffled payload format (downloaded from MinIO):
-    # {"map_task_id": "...", "partition_id": N, "intermediate_pairs": [[key, value], ...]}
+    
     if not isinstance(payload, dict):
         raise ValueError(f"Reduce input must be a JSON object: {source_path}")
 
