@@ -6,3 +6,5 @@ metadata:
 data:
   AUTH_HOST: auth-service
   AUTH_PORT: "8080"
+  MANAGER_SERVICE_URL: "http://manager-service:8000"
+  SECRET_KEY: "afbd8c862c2e1e694dc13939214b4f7c4d44c9bcb2f22a7dd142afb1c992de02"

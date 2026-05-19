@@ -32,7 +32,7 @@ metadata:
   name: postgres-secret
 type: Opaque
 data:
-  POSTGRES_PASSWORD : cGFzczEyMwo= #pass123
+  POSTGRES_PASSWORD : cGFzczEyMw== #pass123
 
 ---
 

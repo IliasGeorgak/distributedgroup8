@@ -14,7 +14,7 @@ metadata:
   name: minio-config
 data:
   MINIO_BROWSER_REDIRECT_URL: "http://localhost:9001"
-  MINIO_SERVER_URL: "http://minio.svc.cluster.local:9000"
+  MINIO_SERVER_URL: "minio-service:9000"
   MINIO_REGION_NAME: "local-dev"
   MINIO_PROMETHEUS_AUTH_TYPE: "public"
 

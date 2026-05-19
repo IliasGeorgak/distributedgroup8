@@ -25,6 +25,8 @@ spec:
             name: postgres-secret
         - configMapRef:
             name: postgres-config
+        - configMapRef:
+            name: auth-config
         resources:
           requests:
             memory: "128Mi"

@@ -9,12 +9,10 @@ load_dotenv()
 
 host = os.environ["AUTH_HOST"] 
 port = os.environ["AUTH_PORT"] #8080
-man_port = os.environ["MAN_PORT"] #8082
 AUTH_SERVICE_URL = f"http://{host}:{port}"
 AUTH_SERVICE_LOGIN_URL = f"http://{host}:{port}/token"
 AUTH_SERVICE_REGISTER_URL = f"http://{host}:{port}/register"
-MANAGER_SERVICE_URL = f"http://{host}:{man_port}"
-# MANAGER_SERVICE_URL = os.getenv("MANAGER_SERVICE_URL", "http://manager-service:8000") # for kuber
+MANAGER_SERVICE_URL = os.getenv("MANAGER_SERVICE_URL", "http://manager-service:8000")
 
 app = FastAPI()
 
