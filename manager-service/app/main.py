@@ -1,8 +1,15 @@
+<<<<<<< HEAD
+=======
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form
+>>>>>>> fd7335821fe5c7f771bff6db921ad373829f1927
 from pathlib import Path
 import os, shutil, tempfile
 from manager import ManagerService
 import db
+<<<<<<< HEAD
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form
+=======
+>>>>>>> fd7335821fe5c7f771bff6db921ad373829f1927
 
 app = FastAPI()
 
