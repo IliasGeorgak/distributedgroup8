@@ -1,0 +1,9 @@
+task_id: map-task-001
+task_type: map
+input_bucket: betet
+input_objects:
+  - test_input.txt
+output_bucket: betet
+output_object: results/map-task-001.json
+parameters:
+  case_sensitive: false

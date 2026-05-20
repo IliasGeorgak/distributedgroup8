@@ -1,0 +1,37 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: reduce-job
+spec:
+  template:
+    spec:
+      restartPolicy: Never
+
+      containers:
+      - name: worker
+        image: worker:latest
+        imagePullPolicy: Never
+
+        envFrom:
+        - secretRef:
+            name: postgres-secret
+        - secretRef:
+            name: minio-secret
+        - configMapRef:
+            name: postgres-config
+        - configMapRef:
+            name: minio-config
+
+        command: ["python", "worker.py"]
+
+        args:
+          - "--task-json"
+          - '{
+              "task_id":"reduce-1",
+              "task_type":"reduce",
+              "input_bucket":"betet",
+              "input_objects":["results/test-map-shuffle-part-0.json"],
+              "output_bucket":"betet",
+              "output_object":"results/reduce-output.json",
+              "parameters":{}
+            }'

@@ -1,0 +1,5 @@
+@"
+hello world
+hello mapreduce
+world world
+"@ | Set-Content .\demo-input.txt

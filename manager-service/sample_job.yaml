@@ -1,0 +1,24 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ worker_id }}
+spec:
+  backoffLimit: 2
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: worker
+          image: {{ image }}
+          command: ["python3", "worker.py"]
+          args:
+          {% for arg in args %}
+          - "{{ arg }}"
+          {% endfor %}
+          envFrom:
+            - secretRef:
+                name: postgres-secret
+            - configMapRef:
+                name: postgres-config
+            - configMapRef:
+                name: minio-config
