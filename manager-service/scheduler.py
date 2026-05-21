@@ -87,26 +87,54 @@ class Scheduler:
             "snapshot": self.master.snapshot(),
         }
 
-    def _drain_phase(self, task_type: str) -> list[Path]:
-        results: list[Path] = []
+    # def _drain_phase(self, task_type: str) -> list[Path]:
+    #     results: list[Path] = []
+
+    #     while not self._phase_completed(task_type):
+    #         progress_made = False
+    #         if task_type == "map":
+    #             task_rec = self.master.assign_map_task()
+    #         elif task_type == "reduce":
+    #             task_rec = self.master.assign_reduce_task()
+    #         else:
+    #             raise ValueError("task_type must be 'map' or 'reduce'")
+
+    #         if self.execute_task(task_rec):
+    #                 progress_made = True
+    #                 results.append(output_path)
+
+    #         if not progress_made:
+    #             raise RuntimeError(f"No progress made while draining {task_type} phase")
+
+    #     return results
+
+    def _drain_phase(self, task_type: str) -> list[str]:
+        results = []
 
         while not self._phase_completed(task_type):
-            progress_made = False
-            if task_type == "map":
-                task_rec = self.master.assign_map_task()
-            elif task_type == "reduce":
-                task_rec = self.master.assign_reduce_task()
-            else:
-                raise ValueError("task_type must be 'map' or 'reduce'")
+            task_rec = (
+                self.master.assign_map_task()
+                if task_type == "map"
+                else self.master.assign_reduce_task()
+            )
 
-            if self.execute_task(task_rec):
-                    progress_made = True
-                    results.append(output_path)
+            if task_rec is None:
+                raise RuntimeError(f"No available {task_type} task")
 
-            if not progress_made:
-                raise RuntimeError(f"No progress made while draining {task_type} phase")
+            if not self.execute_task(task_rec):
+                raise RuntimeError(f"{task_type} task {task_rec.task_id} failed")
+
+            self.master.mark_status(
+                task_type,
+                task_rec.task_id,
+                TaskState.COMPLETED,
+                task_rec.worker_id,
+            )
+
+            results.append(str(task_rec.payload["output_object"]))
 
         return results
+
 
     def _phase_completed(self, task_type: str) -> bool:
         tasks = self._task_registry(task_type)

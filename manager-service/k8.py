@@ -1,48 +1,53 @@
 import json
-import tempfile
+import re
 import time
-from typing import Any
+from pathlib import Path
 
-from kubernetes import client, config, utils
-from jinja2 import Template
+import yaml
+from kubernetes import client, config
+from jinja2 import Environment, FileSystemLoader
 from master import TaskRecord
-import os
 
 class Kuber:
-    def __init__(self, namespace: str = "default",image: str = "worker") -> None:
+    def __init__(self, namespace: str = "default",image: str = "worker:latest") -> None:
+        service_account_token = Path(
+            "/var/run/secrets/kubernetes.io/serviceaccount/token"
+        )
         try:
-            config.load_kube_config() #load local cluster configuration
-        except:
-            config.load_incluster_config() #same but for actual clusters
+            config.load_incluster_config()
+        except config.ConfigException:
+            config.load_kube_config()
         self.namespace = namespace
         self.image = image
         self.api_client = client.ApiClient()
-        self.batch = client.BatchV1Api()
-        self.core = client.CoreV1Api()
+        if service_account_token.exists():
+            token = service_account_token.read_text(encoding="utf-8").strip()
+            self.api_client.default_headers["Authorization"] = f"Bearer {token}"
+        self.batch = client.BatchV1Api(self.api_client)
+        self.core = client.CoreV1Api(self.api_client)
+        self.template_dir = Path(__file__).resolve().parent
         
     def create_worker(self, rendered_yaml: str) -> str:
-
         try:
-            objs = utils.create_from_yaml(
-                self.api_client, yaml_content=rendered_yaml, namespace=self.namespace
+            job_body = yaml.safe_load(rendered_yaml)
+            job = self.batch.create_namespaced_job(
+                namespace=self.namespace,
+                body=job_body,
             )
-            job = objs[0]
             job_name = job.metadata.name
             print(f"Created job: {job_name}")
             return job_name
-        except utils.FailToCreateError as e:
-            print(f"Failed to create job: {e}")
+        except Exception as e:
+            raise RuntimeError(f"Failed to create job: {e}") from e
 
     def render_worker_yaml(self, task_metadata: TaskRecord, image: str = None) -> str:
         if image is None:
             image = self.image
-        # Load job template
-        with open("sample_job.yaml") as f:
-            template = Template(f.read())
-        worker_id = task_metadata.worker_id
+        env = Environment(loader=FileSystemLoader(str(self.template_dir)))
+        template = env.get_template("sample_job.yaml")
+        worker_id = self.sanitize_job_name(task_metadata.worker_id or task_metadata.task_id)
         args = self.build_args(task_metadata, worker_id)
 
-        # Render YAML with dynamic values
         rendered_yaml = template.render(
             worker_id=worker_id,
             image=image,
@@ -59,6 +64,12 @@ class Kuber:
             "--worker-id",
             worker_id,
         ]
+
+    @staticmethod
+    def sanitize_job_name(value: str) -> str:
+        name = re.sub(r"[^a-z0-9-]+", "-", value.lower()).strip("-")
+        name = re.sub(r"-+", "-", name)
+        return name[:63].rstrip("-") or "worker-job"
     
     def wait_for_job_completion(self, job_name: str) -> bool:
         while True:
@@ -96,10 +107,7 @@ class Kuber:
     def exec(self,task_metadata: TaskRecord) -> bool:
         rendered_yaml = self.render_worker_yaml(task_metadata)
         job_name = self.create_worker(rendered_yaml)
-        if self.wait_for_job_completion(job_name):
-            return True
-        else:
-            return False
+        return self.wait_for_job_completion(job_name)
 
 if __name__ == "__main__":
     kuber = Kuber()

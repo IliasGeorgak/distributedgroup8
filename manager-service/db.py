@@ -55,6 +55,14 @@ class Database:
                     );
                     """
                 )
+                cursor.execute("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS input_bucket TEXT;")
+                cursor.execute("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS input_object TEXT;")
+                cursor.execute("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS split_count INTEGER;")
+                cursor.execute("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS r_partitions INTEGER;")
+                cursor.execute("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS case_sensitive BOOLEAN DEFAULT FALSE;")
+                cursor.execute("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS partition_function TEXT DEFAULT 'md5';")
+                cursor.execute("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;")
+
                 cursor.execute(
                     """
                     CREATE TABLE IF NOT EXISTS tasks (
@@ -277,4 +285,142 @@ class Database:
                 for row in rows
                 if row[3] is not None            
             ],
+        }
+    ###############
+    def create_submitted_job(
+        self,
+        input_bucket: str,
+        input_object: str,
+        split_count: int,
+        r_partitions: int,
+        case_sensitive: bool,
+        partition_function: str = "md5",
+    ) -> int:
+        with self.get_connection() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    """
+                    INSERT INTO jobs (
+                        status,
+                        input_bucket,
+                        input_object,
+                        split_count,
+                        r_partitions,
+                        case_sensitive,
+                        partition_function
+                    )
+                    VALUES (%s, %s, %s, %s, %s, %s, %s)
+                    RETURNING job_id;
+                    """,
+                    (
+                        "submitted",
+                        input_bucket,
+                        input_object,
+                        split_count,
+                        r_partitions,
+                        case_sensitive,
+                        partition_function,
+                    ),
+                )
+                row = cursor.fetchone()
+            conn.commit()
+
+        if row is None:
+            raise RuntimeError("Failed to create submitted job")
+
+        return int(row[0])
+
+    def claim_next_submitted_job(self) -> dict[str, Any] | None:
+        with self.get_connection() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    """
+                    UPDATE jobs
+                    SET status = 'running',
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE job_id = (
+                        SELECT job_id
+                        FROM jobs
+                        WHERE status = 'submitted'
+                        ORDER BY created_at
+                        LIMIT 1
+                        FOR UPDATE SKIP LOCKED
+                    )
+                    RETURNING job_id, status, input_bucket, input_object,
+                            split_count, r_partitions, case_sensitive,
+                            partition_function;
+                    """
+                )
+                row = cursor.fetchone()
+            conn.commit()
+
+        if row is None:
+            return None
+
+        return {
+            "job_id": row[0],
+            "status": row[1],
+            "input_bucket": row[2],
+            "input_object": row[3],
+            "split_count": row[4],
+            "r_partitions": row[5],
+            "case_sensitive": row[6],
+            "partition_function": row[7],
+        }
+    
+    def update_job_submission_metadata(
+        self,
+        job_id: int,
+        status: str,
+        input_bucket: str,
+        input_object: str,
+        split_count: int,
+        r_partitions: int,
+        case_sensitive: bool,
+        partition_function: str,
+    ) -> dict[str, Any]:
+        with self.get_connection() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    """
+                    UPDATE jobs
+                    SET status = %s,
+                        input_bucket = %s,
+                        input_object = %s,
+                        split_count = %s,
+                        r_partitions = %s,
+                        case_sensitive = %s,
+                        partition_function = %s,
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE job_id = %s
+                    RETURNING job_id, status, input_bucket, input_object,
+                            split_count, r_partitions, case_sensitive,
+                            partition_function;
+                    """,
+                    (
+                        status,
+                        input_bucket,
+                        input_object,
+                        split_count,
+                        r_partitions,
+                        case_sensitive,
+                        partition_function,
+                        job_id,
+                    ),
+                )
+                row = cursor.fetchone()
+            conn.commit()
+
+        if row is None:
+            raise ValueError(f"Unknown job_id '{job_id}'")
+
+        return {
+            "job_id": row[0],
+            "status": row[1],
+            "input_bucket": row[2],
+            "input_object": row[3],
+            "split_count": row[4],
+            "r_partitions": row[5],
+            "case_sensitive": row[6],
+            "partition_function": row[7],
         }

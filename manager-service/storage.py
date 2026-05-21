@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from minio import Minio, S3Error
-import os
+import os, io
 
 
 @dataclass(slots=True)
@@ -53,3 +53,35 @@ class MinioStorage:
                 return False
 
             raise
+
+    def upload_text(self, bucket_name: str, object_name: str, text: str) -> None:
+        self.ensure_bucket(bucket_name)
+        data = text.encode("utf-8")
+        self.client.put_object(
+            bucket_name,
+            object_name,
+            io.BytesIO(data),
+            length=len(data),
+            content_type="text/plain",
+        )
+
+    def download_text(self, bucket_name: str, object_name: str) -> str:
+        response = self.client.get_object(bucket_name, object_name)
+        try:
+            return response.read().decode("utf-8")
+        finally:
+            response.close()
+            response.release_conn()
+
+    def download_json(self, bucket_name: str, object_name: str) -> Any:
+        return json.loads(self.download_text(bucket_name, object_name))
+
+    def list_objects(self, bucket_name: str, prefix: str = "") -> list[str]:
+        return [
+            obj.object_name
+            for obj in self.client.list_objects(
+                bucket_name,
+                prefix=prefix,
+                recursive=True,
+            )
+        ]

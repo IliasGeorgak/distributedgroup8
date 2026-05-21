@@ -6,3 +6,6 @@ starlette
 uvicorn[standard]
 psycopg2-binary
 python-multipart
+minio
+PyYAML
+Jinja2

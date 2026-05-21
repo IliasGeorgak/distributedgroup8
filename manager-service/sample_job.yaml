@@ -10,14 +10,17 @@ spec:
       containers:
         - name: worker
           image: {{ image }}
+          imagePullPolicy: Never
           command: ["python3", "worker.py"]
           args:
           {% for arg in args %}
-          - "{{ arg }}"
+          - {{ arg | tojson }}
           {% endfor %}
           envFrom:
             - secretRef:
                 name: postgres-secret
+            - secretRef:
+                name: minio-secret
             - configMapRef:
                 name: postgres-config
             - configMapRef:

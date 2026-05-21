@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import traceback
 import time
 from collections import defaultdict
 from pathlib import Path
@@ -398,6 +399,204 @@ class ManagerService:
             "map_stage_result": map_stage_result,
             "reduce_stage_result": reduce_stage_result,
         }
+
+#######################################
+    def submit_input_job(
+        self,
+        input_file: str | Path,
+        original_filename: str | None,
+        bucket_name: str,
+        split_count: int,
+        r_partitions: int,
+        case_sensitive: bool = False,
+        partition_function: str = "md5",
+    ) -> dict[str, Any]:
+        self.database.init_schema()
+        self.storage.ensure_bucket(bucket_name)
+
+        suffix = Path(original_filename or "input.txt").suffix or ".txt"
+
+        temp_job_id = self.database.create_job(status="creating")
+        input_object = f"inputs/job-{temp_job_id}/input{suffix}"
+
+        self.upload_input_file(
+            bucket_name=bucket_name,
+            object_name=input_object,
+            file_path=input_file,
+        )
+
+        self.database.update_job_submission_metadata(
+            job_id=temp_job_id,
+            status="submitted",
+            input_bucket=bucket_name,
+            input_object=input_object,
+            split_count=split_count,
+            r_partitions=r_partitions,
+            case_sensitive=case_sensitive,
+            partition_function=partition_function,
+        )
+
+        return {
+            "job_id": temp_job_id,
+            "status": "submitted",
+            "input": {
+                "bucket": bucket_name,
+                "object": input_object,
+            },
+            "split_count": split_count,
+            "r_partitions": r_partitions,
+            "case_sensitive": case_sensitive,
+        }
+
+    def prepare_map_tasks_from_minio_input(
+        self,
+        job_id: int,
+        input_bucket: str,
+        input_object: str,
+        output_bucket: str,
+        split_count: int,
+        split_object_prefix: str,
+        map_parameters: dict[str, Any] | None = None,
+    ) -> tuple[list[str], list[dict[str, Any]]]:
+        text = self.storage.download_text(input_bucket, input_object)
+        lines = text.splitlines()
+
+        actual_splits = 1 if len(lines) == 0 else min(split_count, len(lines))
+        base_size = len(lines) // actual_splits
+        remainder = len(lines) % actual_splits
+
+        split_objects = []
+        start = 0
+
+        for split_id in range(actual_splits):
+            size = base_size + (1 if split_id < remainder else 0)
+            end = start + size
+
+            object_name = f"{split_object_prefix.strip('/')}/split_{split_id}.txt"
+            self.storage.upload_text(
+                input_bucket,
+                object_name,
+                "\n".join(lines[start:end]),
+            )
+
+            split_objects.append(object_name)
+            start = end
+
+        map_tasks = self.build_map_tasks_for_splits(
+            job_id=job_id,
+            input_bucket=input_bucket,
+            split_objects=split_objects,
+            output_bucket=output_bucket,
+            map_parameters=map_parameters,
+        )
+
+        return split_objects, map_tasks
+
+    def job_monitor_loop(self, poll_interval_seconds: float = 5.0) -> None:
+        self.database.init_schema()
+
+        while True:
+            job = self.database.claim_next_submitted_job()
+
+            if job is None:
+                time.sleep(poll_interval_seconds)
+                continue
+
+            try:
+                self.execute_submitted_job(job)
+            except Exception as exc:
+                print(f"Job {job['job_id']} failed: {exc}", flush=True)
+                traceback.print_exc()
+                self.database.update_job_status(job["job_id"], "failed")
+
+    def collect_shuffle_partition_objects_from_minio(
+        self,
+        bucket_name: str,
+        map_result_objects: list[str],
+    ) -> dict[int, list[str]]:
+        grouped: dict[int, list[str]] = defaultdict(list)
+
+        for object_name in map_result_objects:
+            payload = self.storage.download_json(bucket_name, object_name)
+            shuffle_payload = payload.get("shuffle")
+
+            if not isinstance(shuffle_payload, dict):
+                raise ValueError(f"Map output missing 'shuffle': {object_name}")
+
+            partition_objects = shuffle_payload.get("partition_objects")
+
+            if not isinstance(partition_objects, list):
+                raise ValueError(f"'shuffle.partition_objects' must be a list: {object_name}")
+
+            for entry in partition_objects:
+                partition_id = int(entry["partition_id"])
+                grouped[partition_id].append(str(entry["object_name"]))
+
+        return dict(grouped)
+
+
+    def execute_submitted_job(self, job: dict[str, Any]) -> None:
+        job_id = int(job["job_id"])
+
+        split_objects, map_tasks = self.prepare_map_tasks_from_minio_input(
+            job_id=job_id,
+            input_bucket=job["input_bucket"],
+            input_object=job["input_object"],
+            output_bucket=job["input_bucket"],
+            split_count=int(job["split_count"]),
+            split_object_prefix=f"inputs/job-{job_id}/splits",
+            map_parameters={
+                "case_sensitive": bool(job["case_sensitive"]),
+                "r_partitions": int(job["r_partitions"]),
+                "partition_function": job["partition_function"],
+            },
+        )
+
+        self.database.create_tasks(
+            job_id=job_id,
+            num_tasks=len(map_tasks),
+            status="pending",
+            task_type="map",
+        )
+
+        self.database.update_job_status(job_id, "running_map")
+
+        map_stage_result = self.run_map_stage(map_tasks)
+
+        self.database.update_job_status(job_id, "map_completed")
+
+        partition_objects = self.collect_shuffle_partition_objects_from_minio(
+            bucket_name=job["input_bucket"],
+            map_result_objects=map_stage_result["map_results"],
+        )
+
+        reduce_tasks = self.build_reduce_tasks_for_partitions(
+            job_id=job_id,
+            input_bucket=job["input_bucket"],
+            output_bucket=job["input_bucket"],
+            partition_objects=partition_objects,
+            r_partitions=int(job["r_partitions"]),
+            partition_function=job["partition_function"],
+        )
+        
+        if not reduce_tasks:
+            self.database.update_job_status(job_id, "completed")
+            return
+
+        self.database.create_tasks(
+            job_id=job_id,
+            num_tasks=len(reduce_tasks),
+            status="pending",
+            task_type="reduce",
+        )
+
+        self.database.update_job_status(job_id, "running_reduce")
+
+        self.run_reduce_stage(reduce_tasks)
+
+        self.database.update_job_status(job_id, "completed")
+
+
 
 
 def main() -> None:
