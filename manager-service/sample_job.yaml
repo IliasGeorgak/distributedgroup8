@@ -3,6 +3,7 @@ kind: Job
 metadata:
   name: {{ worker_id }}
 spec:
+  ttlSecondsAfterFinished: 30
   backoffLimit: 2
   template:
     spec:

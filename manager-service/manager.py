@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import traceback
 import time
 from collections import defaultdict
@@ -75,6 +76,14 @@ class ManagerService:
         source_path = Path(file_path)
         self.storage.upload_file(bucket_name, object_name, source_path)
         print(f"Uploaded {source_path} to {bucket_name}/{object_name}")
+
+    @staticmethod
+    def file_sha256(file_path: str | Path) -> str:
+        file_hash = hashlib.sha256()
+        with Path(file_path).open("rb") as file:
+            for chunk in iter(lambda: file.read(1024 * 1024), b""):
+                file_hash.update(chunk)
+        return file_hash.hexdigest()
 
     def split_input_file(
         self,
@@ -228,11 +237,20 @@ class ManagerService:
         return result
 
     def get_job_results(self, job_id: int, bucket_name: str) -> dict[str, Any]:
+        job_status = self.database.get_job_status(job_id)
         prefix = f"results/job-{job_id}-reduce-"
         result_objects = sorted(self.storage.list_objects(bucket_name, prefix=prefix))
 
         return {
             "job_id": job_id,
+            "status": job_status["status"],
+            "created_at": job_status["created_at"],
+            "started_at": job_status["started_at"],
+            "completed_at": job_status["completed_at"],
+            "duration_seconds": job_status["duration_seconds"],
+            "split_count": job_status["split_count"],
+            "r_partitions": job_status["r_partitions"],
+            "case_sensitive": job_status["case_sensitive"],
             "bucket": bucket_name,
             "result_count": len(result_objects),
             "results": [
@@ -417,13 +435,17 @@ class ManagerService:
         suffix = Path(original_filename or "input.txt").suffix or ".txt"
 
         temp_job_id = self.database.create_job(status="creating")
-        input_object = f"inputs/job-{temp_job_id}/input{suffix}"
+        input_hash = self.file_sha256(input_file)
+        input_object = f"inputs/by-hash/{input_hash}{suffix}"
 
-        self.upload_input_file(
-            bucket_name=bucket_name,
-            object_name=input_object,
-            file_path=input_file,
-        )
+        if self.storage.object_exists(bucket_name, input_object):
+            print(f"Reusing existing input object: {bucket_name}/{input_object}")
+        else:
+            self.upload_input_file(
+                bucket_name=bucket_name,
+                object_name=input_object,
+                file_path=input_file,
+            )
 
         self.database.update_job_submission_metadata(
             job_id=temp_job_id,
@@ -493,10 +515,15 @@ class ManagerService:
         return split_objects, map_tasks
 
     def job_monitor_loop(self, poll_interval_seconds: float = 5.0) -> None:
-        self.database.init_schema()
-
         while True:
-            job = self.database.claim_next_submitted_job()
+            try:
+                self.database.init_schema()
+                job = self.database.claim_next_submitted_job()
+            except Exception as exc:
+                print(f"Job monitor waiting for database: {exc}", flush=True)
+                traceback.print_exc()
+                time.sleep(poll_interval_seconds)
+                continue
 
             if job is None:
                 time.sleep(poll_interval_seconds)
@@ -507,7 +534,14 @@ class ManagerService:
             except Exception as exc:
                 print(f"Job {job['job_id']} failed: {exc}", flush=True)
                 traceback.print_exc()
-                self.database.update_job_status(job["job_id"], "failed")
+                try:
+                    self.database.update_job_status(job["job_id"], "failed")
+                except Exception as status_exc:
+                    print(
+                        f"Failed to mark job {job['job_id']} as failed: {status_exc}",
+                        flush=True,
+                    )
+                    traceback.print_exc()
 
     def collect_shuffle_partition_objects_from_minio(
         self,

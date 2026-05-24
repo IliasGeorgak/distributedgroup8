@@ -1,13 +1,41 @@
 # cli.py
-import argparse
-import json
+import argparse, json, base64, time, requests
 from pathlib import Path
-
-import requests
 
 UI_SERVICE_URL = "http://localhost:8081"
 TOKEN_FILE = Path(".mapreduce_token.json")
 
+def decode_jwt_payload(token: str) -> dict:
+    payload = token.split(".")[1]
+    payload += "=" * (-len(payload) % 4)
+    return json.loads(base64.urlsafe_b64decode(payload))
+
+
+def token_expires_soon(token: str, threshold_seconds: int = 60) -> bool:
+    try:
+        payload = decode_jwt_payload(token)
+        exp = int(payload["exp"])
+        return exp - time.time() < threshold_seconds
+    except Exception:
+        return True
+
+
+def refresh_token() -> bool:
+    token = load_token()
+    if not token:
+        return False
+
+    response = requests.post(
+        f"{UI_SERVICE_URL}/auth/refresh",
+        headers={"Authorization": f"Bearer {token}"},
+        timeout=5,
+    )
+
+    if response.status_code != 200:
+        return False
+
+    save_token(response.json())
+    return True
 
 def save_token(token_data: dict) -> None:
     TOKEN_FILE.write_text(json.dumps(token_data, indent=2), encoding="utf-8")
@@ -22,9 +50,16 @@ def load_token() -> str | None:
 
 def get_auth_headers() -> dict[str, str] | None:
     token = load_token()
+
     if not token:
-        print("You are not logged in. Run: python cli.py auth login --username ... --password ...")
+        print("You are not logged in. Run: python cli.py auth login -u ... -p ...")
         return None
+
+    if token_expires_soon(token):
+        if not refresh_token():
+            print("Session expired. Run: python cli.py auth login -u ... -p ...")
+            return None
+        token = load_token()
 
     return {"Authorization": f"Bearer {token}"}
 
@@ -200,43 +235,43 @@ def main() -> None:
     auth_subparsers = auth_parser.add_subparsers(dest="auth_command")
 
     login_parser = auth_subparsers.add_parser("login")
-    login_parser.add_argument("--username", required=True)
-    login_parser.add_argument("--password", required=True)
+    login_parser.add_argument("-u", "--username", required=True)
+    login_parser.add_argument("-p", "--password", required=True)
 
     auth_subparsers.add_parser("logout")
 
     register_parser = auth_subparsers.add_parser("register")
-    register_parser.add_argument("--username", required=True)
-    register_parser.add_argument("--password", required=True)
-    register_parser.add_argument("--email", required=True)
+    register_parser.add_argument("-u", "--username", required=True)
+    register_parser.add_argument("-p", "--password", required=True)
+    register_parser.add_argument("-e", "--email", required=True)
 
     jobs_parser = subparsers.add_parser("jobs")
     jobs_subparsers = jobs_parser.add_subparsers(dest="jobs_command")
     jobs_subparsers.add_parser("list")
 
     jobs_submit_parser = jobs_subparsers.add_parser("submit")
-    jobs_submit_parser.add_argument("--input_file", required=True)
-    jobs_submit_parser.add_argument("--split_count", type=int, default=4)
-    jobs_submit_parser.add_argument("--r_partitions", type=int, default=3)
-    jobs_submit_parser.add_argument("--case_sensitive", action="store_true")
+    jobs_submit_parser.add_argument("-i", "--input_file", required=True)
+    jobs_submit_parser.add_argument("-m", "--split_count", type=int, default=4)
+    jobs_submit_parser.add_argument("-r", "--r_partitions", type=int, default=3)
+    jobs_submit_parser.add_argument("-c", "--case_sensitive", action="store_true")
 
     jobs_status_parser = jobs_subparsers.add_parser("status")
-    jobs_status_parser.add_argument("--job_id", required=True, type=int)
+    jobs_status_parser.add_argument("-id", "--job_id", required=True, type=int)
 
     jobs_results_parser = jobs_subparsers.add_parser("results")
-    jobs_results_parser.add_argument("--job_id", required=True, type=int)
+    jobs_results_parser.add_argument("-id", "--job_id", required=True, type=int)
 
     admin_parser = subparsers.add_parser("admin")
     admin_subparsers = admin_parser.add_subparsers(dest="admin_command")
 
     admin_create_user_parser = admin_subparsers.add_parser("create_user")
-    admin_create_user_parser.add_argument("--username", required=True)
-    admin_create_user_parser.add_argument("--password", required=True)
-    admin_create_user_parser.add_argument("--email", required=True)
-    admin_create_user_parser.add_argument("--role", required=True)
+    admin_create_user_parser.add_argument("-u", "--username", required=True)
+    admin_create_user_parser.add_argument("-p", "--password", required=True)
+    admin_create_user_parser.add_argument("-e", "--email", required=True)
+    admin_create_user_parser.add_argument("-r", "--role", required=True)
 
     admin_delete_parser = admin_subparsers.add_parser("delete_user")
-    admin_delete_parser.add_argument("--user_id", required=True, type=int)
+    admin_delete_parser.add_argument("-id", "--user_id", required=True, type=int)
     
     admin_subparsers.add_parser("view_users")
 

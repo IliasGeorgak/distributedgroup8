@@ -19,6 +19,7 @@ class DatabaseConfig:
     user: str = os.environ["POSTGRES_USER"]
     password: str = os.environ["POSTGRES_PASSWORD"]
     port: int = os.environ["POSTGRES_PORT"]
+    timezone: str = os.getenv("APP_TIMEZONE", "Europe/Athens")
 
 
 class Database:
@@ -32,6 +33,7 @@ class Database:
             user=self.config.user,
             password=self.config.password,
             port=self.config.port,
+            options=f"-c timezone={self.config.timezone}",
         )
 
     def test_connection(self) -> tuple[int]:
@@ -62,6 +64,8 @@ class Database:
                 cursor.execute("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS case_sensitive BOOLEAN DEFAULT FALSE;")
                 cursor.execute("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS partition_function TEXT DEFAULT 'md5';")
                 cursor.execute("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;")
+                cursor.execute("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS started_at TIMESTAMP;")
+                cursor.execute("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS completed_at TIMESTAMP;")
 
                 cursor.execute(
                     """
@@ -186,14 +190,25 @@ class Database:
         return self._task_row_to_dict(row)
 
     def update_job_status(self, job_id: int, status: str) -> dict[str, Any]:
+        started_at_sql = ", started_at = COALESCE(started_at, CURRENT_TIMESTAMP)" if status.startswith("running") else ""
+        completed_at_sql = (
+            ", completed_at = CURRENT_TIMESTAMP"
+            if status in {"completed", "failed"}
+            else ""
+        )
+
         with self.get_connection() as conn:
             with conn.cursor() as cursor:
                 cursor.execute(
-                    """
+                    f"""
                     UPDATE jobs
-                    SET status = %s
+                    SET status = %s,
+                        updated_at = CURRENT_TIMESTAMP
+                        {started_at_sql}
+                        {completed_at_sql}
                     WHERE job_id = %s
-                    RETURNING job_id, status, created_at;
+                    RETURNING job_id, status, created_at, started_at, completed_at,
+                              EXTRACT(EPOCH FROM (COALESCE(completed_at, CURRENT_TIMESTAMP) - created_at));
                     """,
                     (status, job_id),
                 )
@@ -206,6 +221,9 @@ class Database:
             "job_id": row[0],
             "status": row[1],
             "created_at": row[2],
+            "started_at": row[3],
+            "completed_at": row[4],
+            "duration_seconds": float(row[5]) if row[5] is not None else None,
         }
 
     @staticmethod
@@ -223,7 +241,9 @@ class Database:
             with conn.cursor() as cursor:
                 cursor.execute(
                     """
-                    SELECT job_id, status, created_at
+                    SELECT job_id, status, created_at, started_at, completed_at,
+                           split_count, r_partitions, case_sensitive,
+                           EXTRACT(EPOCH FROM (COALESCE(completed_at, CURRENT_TIMESTAMP) - created_at))
                     FROM jobs
                     WHERE job_id = %s
                     """,
@@ -237,7 +257,13 @@ class Database:
             return {
                 "job_id": row[0],
                 "status": row[1],
-                "created_at": row[2]
+                "created_at": row[2],
+                "started_at": row[3],
+                "completed_at": row[4],
+                "split_count": row[5],
+                "r_partitions": row[6],
+                "case_sensitive": row[7],
+                "duration_seconds": float(row[8]) if row[8] is not None else None,
             }
         
     def get_job_tasks_status(self, job_id: int) -> dict:
@@ -337,6 +363,7 @@ class Database:
                     """
                     UPDATE jobs
                     SET status = 'running',
+                        started_at = COALESCE(started_at, CURRENT_TIMESTAMP),
                         updated_at = CURRENT_TIMESTAMP
                     WHERE job_id = (
                         SELECT job_id

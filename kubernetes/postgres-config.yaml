@@ -9,3 +9,4 @@ data:
   POSTGRES_USER: postgres
   POSTGRES_DB: auth_db
   POSTGRES_JOBS_DB: jobsdb
+  APP_TIMEZONE: Europe/Athens

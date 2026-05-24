@@ -100,13 +100,17 @@ class Worker:
                 }
             )
 
-        enriched_result = dict(map_result)
-        enriched_result["shuffle"] = {
-            "r_partitions": r_partitions,
-            "partition_function": partition_function_name,
-            "partition_objects": partition_objects,
+        return {
+            "task_id": metadata.task_id,
+            "task_type": metadata.task_type,
+            "m_splits": map_result.get("m_splits"),
+            "split_metadata": map_result.get("split_metadata", []),
+            "shuffle": {
+                "r_partitions": r_partitions,
+                "partition_function": partition_function_name,
+                "partition_objects": partition_objects,
+            },
         }
-        return enriched_result
 
     def run_assigned_map_task(self, master: Master) -> Path | None:
         return self._run_assigned_task(master, task_type="map")

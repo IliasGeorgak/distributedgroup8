@@ -2,8 +2,8 @@ from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
     SECRET_KEY: str 
-    ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 15
+    ALGORITHM: str
+    ACCESS_TOKEN_EXPIRE_MINUTES: int 
 
     POSTGRES_HOST: str
     POSTGRES_PORT: int

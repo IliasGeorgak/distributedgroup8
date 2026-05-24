@@ -13,10 +13,14 @@ port = os.environ["POSTGRES_PORT"]
 user = os.environ["POSTGRES_USER"]
 db = os.environ["POSTGRES_DB"]
 password = quote_plus(os.environ["POSTGRES_PASSWORD"].strip())
+timezone = os.getenv("APP_TIMEZONE", "Europe/Athens")
 #password = base64.b64decode(password.strip()).decode("utf-8")
 SQLALCHEMY_DATABASE_URL = f"postgresql+psycopg2://{user}:{password}@{host}:{port}/{db}"
 
-engine = create_engine(SQLALCHEMY_DATABASE_URL)
+engine = create_engine(
+    SQLALCHEMY_DATABASE_URL,
+    connect_args={"options": f"-c timezone={timezone}"},
+)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
