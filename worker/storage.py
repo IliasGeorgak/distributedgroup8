@@ -37,3 +37,21 @@ def download_object(bucket_name: str, object_name: str, destination: str | Path)
 def upload_file(bucket_name: str, object_name: str, file_path: str | Path) -> None:
     ensure_bucket(bucket_name)
     client.fput_object(bucket_name, object_name, str(file_path))
+
+def download_object_range(
+    bucket_name: str,
+    object_name: str,
+    offset: int,
+    length: int,
+) -> bytes:
+    response = client.get_object(
+        bucket_name,
+        object_name,
+        offset=offset,
+        length=length,
+    )
+    try:
+        return response.read()
+    finally:
+        response.close()
+        response.release_conn()

@@ -8,6 +8,7 @@ class TaskState(str, Enum):
     IDLE = "idle"
     IN_PROGRESS = "in-progress"
     COMPLETED = "completed"
+    FAILED = "failed"
 
 @dataclass(slots=True)
 class TaskRecord:
@@ -76,8 +77,9 @@ class Master:
         target_state = TaskState(new_state)
         allowed_transitions: dict[TaskState, set[TaskState]] = {
             TaskState.IDLE: {TaskState.IN_PROGRESS},
-            TaskState.IN_PROGRESS: {TaskState.IDLE, TaskState.COMPLETED},
+            TaskState.IN_PROGRESS: {TaskState.IDLE, TaskState.COMPLETED, TaskState.FAILED},
             TaskState.COMPLETED: set(),
+            TaskState.FAILED: set(),
         }
         if target_state not in allowed_transitions[task.state]:
             raise ValueError(
@@ -98,7 +100,9 @@ class Master:
                 )
         elif target_state == TaskState.IDLE:
             task.worker_id = None
-
+        elif target_state == TaskState.FAILED:
+            pass
+        
         task.state = target_state
 
     def all_reduces_completed(self) -> bool:

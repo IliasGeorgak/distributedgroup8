@@ -8,7 +8,7 @@ from tempfile import TemporaryDirectory
 from master import Master, TaskState
 from mapper import map_to_key_value_pairs
 from reducer import PARTITION_FUNCTIONS, reduce_partitioned_word_count
-from storage import download_object, upload_file
+from storage import download_object, upload_file, download_object_range
 from task import TaskMetadata
 
 
@@ -30,11 +30,13 @@ class Worker:
 
         with TemporaryDirectory(prefix=f"task-{metadata.task_id}-") as temp_dir:
             working_dir = Path(temp_dir)
-            input_paths = self._download_inputs(metadata, working_dir)
+            if metadata.task_type == "map" and "byte_start" in metadata.parameters:
+                input_paths = [self._download_map_range(metadata, working_dir)]
+            else:
+                input_paths = self._download_inputs(metadata, working_dir)
             task_result = task_handler(input_paths, metadata.parameters)
             if metadata.task_type == "map":
                 task_result = self._shuffle_map_output(task_result, metadata, working_dir)
-
             output_path = working_dir / "result.json"
             output_path.write_text(json.dumps(task_result, indent=2, sort_keys=True), encoding="utf-8")
             upload_file(metadata.output_bucket, metadata.output_object, output_path)
@@ -147,6 +149,40 @@ class Worker:
             input_paths.append(downloaded_path)
         return input_paths
 
+    def _download_map_range(self, metadata: TaskMetadata, working_dir: Path) -> Path:
+        object_name = metadata.input_objects[0]
+
+        byte_start = int(metadata.parameters["byte_start"])
+        byte_end = int(metadata.parameters["byte_end"])
+        object_size = int(metadata.parameters["object_size"])
+
+        # add overlap so words/lines at boundaries are safe
+        overlap = 4096
+        read_start = max(0, byte_start - overlap)
+        read_end = min(object_size, byte_end + overlap)
+        length = read_end - read_start
+
+        raw = download_object_range(
+            metadata.input_bucket,
+            object_name,
+            offset=read_start,
+            length=length,
+        )
+
+        text = raw.decode("utf-8", errors="ignore")
+
+        # Trim partial boundary lines
+        lines = text.splitlines()
+
+        if not metadata.parameters.get("is_first_split", False):
+            lines = lines[1:]
+
+        if not metadata.parameters.get("is_last_split", False):
+            lines = lines[:-1]
+
+        local_path = working_dir / "input-range.txt"
+        local_path.write_text("\n".join(lines), encoding="utf-8")
+        return local_path
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Run a MapReduce worker task from JSON or YAML metadata.")

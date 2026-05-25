@@ -572,19 +572,32 @@ class ManagerService:
     def execute_submitted_job(self, job: dict[str, Any]) -> None:
         job_id = int(job["job_id"])
 
-        split_objects, map_tasks = self.prepare_map_tasks_from_minio_input(
+        # split_objects, map_tasks = self.prepare_map_tasks_from_minio_input(
+        #     job_id=job_id,
+        #     input_bucket=job["input_bucket"],
+        #     input_object=job["input_object"],
+        #     output_bucket=job["input_bucket"],
+        #     split_count=int(job["split_count"]),
+        #     split_object_prefix=f"inputs/job-{job_id}/splits",
+        #     map_parameters={
+        #         "case_sensitive": bool(job["case_sensitive"]),
+        #         "r_partitions": int(job["r_partitions"]),
+        #         "partition_function": job["partition_function"],
+        #     },
+        # )
+
+        map_tasks = self.build_map_tasks_for_input_ranges(
             job_id=job_id,
             input_bucket=job["input_bucket"],
             input_object=job["input_object"],
             output_bucket=job["input_bucket"],
             split_count=int(job["split_count"]),
-            split_object_prefix=f"inputs/job-{job_id}/splits",
             map_parameters={
                 "case_sensitive": bool(job["case_sensitive"]),
                 "r_partitions": int(job["r_partitions"]),
                 "partition_function": job["partition_function"],
             },
-        )
+)
 
         self.database.create_tasks(
             job_id=job_id,
@@ -630,6 +643,46 @@ class ManagerService:
 
         self.database.update_job_status(job_id, "completed")
 
+    def build_map_tasks_for_input_ranges(
+        self,
+        job_id: int,
+        input_bucket: str,
+        input_object: str,
+        output_bucket: str,
+        split_count: int,
+        map_parameters: dict[str, Any] | None = None,
+    ) -> list[dict[str, Any]]:
+        stat = self.storage.stat_object(input_bucket, input_object)
+        object_size = stat.size
+
+        chunk_size = max(1, object_size // split_count)
+
+        tasks = []
+
+        for index in range(split_count):
+            byte_start = index * chunk_size
+            byte_end = object_size if index == split_count - 1 else (index + 1) * chunk_size
+
+            tasks.append(
+                self.build_task_metadata(
+                    task_id=f"job-{job_id}-map-{index + 1}",
+                    task_type="map",
+                    input_bucket=input_bucket,
+                    input_objects=[input_object],
+                    output_bucket=output_bucket,
+                    output_object=f"results/job-{job_id}-map-{index + 1}.json",
+                    parameters={
+                        **(map_parameters or {}),
+                        "byte_start": byte_start,
+                        "byte_end": byte_end,
+                        "object_size": object_size,
+                        "is_first_split": index == 0,
+                        "is_last_split": index == split_count - 1,
+                    },
+                )
+            )
+
+        return tasks
 
 
 

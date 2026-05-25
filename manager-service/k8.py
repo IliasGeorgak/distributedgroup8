@@ -2,11 +2,16 @@ import json
 import re
 import time
 from pathlib import Path
-
+from dataclasses import dataclass
 import yaml
 from kubernetes import client, config
 from jinja2 import Environment, FileSystemLoader
 from master import TaskRecord
+
+@dataclass(slots=True)
+class KubernetesTaskJob:
+    task: TaskRecord
+    job_name: str
 
 class Kuber:
     def __init__(self, namespace: str = "default",image: str = "worker:latest") -> None:
@@ -104,10 +109,50 @@ class Kuber:
         # return task_metadata[""] in logs
         return True
 
-    def exec(self,task_metadata: TaskRecord) -> bool:
+    # def exec(self,task_metadata: TaskRecord) -> bool:
+    #     rendered_yaml = self.render_worker_yaml(task_metadata)
+    #     job_name = self.create_worker(rendered_yaml)
+    #     return self.wait_for_job_completion(job_name)
+    
+    def submit_task(self, task_metadata: TaskRecord) -> KubernetesTaskJob:
         rendered_yaml = self.render_worker_yaml(task_metadata)
         job_name = self.create_worker(rendered_yaml)
-        return self.wait_for_job_completion(job_name)
+        return KubernetesTaskJob(task=task_metadata, job_name=job_name)
+
+    def wait_for_task(self, task_job: KubernetesTaskJob) -> bool:
+        return self.wait_for_job_completion(task_job.job_name)
+
+    def exec(self, task_metadata: TaskRecord) -> bool:
+        task_job = self.submit_task(task_metadata)
+        return self.wait_for_task(task_job)
+    
+    def wait_for_tasks(self, task_jobs: list[KubernetesTaskJob]) -> dict[str, bool]:
+        results: dict[str, bool] = {}
+
+        remaining = list(task_jobs)
+
+        while remaining:
+            still_running: list[KubernetesTaskJob] = []
+
+            for task_job in remaining:
+                job = self.batch.read_namespaced_job(
+                    task_job.job_name,
+                    self.namespace,
+                )
+
+                if job.status.succeeded:
+                    results[task_job.task.task_id] = True
+                elif job.status.failed:
+                    results[task_job.task.task_id] = False
+                else:
+                    still_running.append(task_job)
+
+            remaining = still_running
+
+            if remaining:
+                time.sleep(2)
+
+        return results
 
 if __name__ == "__main__":
     kuber = Kuber()

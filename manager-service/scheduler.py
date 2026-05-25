@@ -108,20 +108,58 @@ class Scheduler:
 
     #     return results
 
+    # def _drain_phase(self, task_type: str) -> list[str]:
+    #     results = []
+
+    #     while not self._phase_completed(task_type):
+    #         task_rec = (
+    #             self.master.assign_map_task()
+    #             if task_type == "map"
+    #             else self.master.assign_reduce_task()
+    #         )
+
+    #         if task_rec is None:
+    #             raise RuntimeError(f"No available {task_type} task")
+
+    #         if not self.execute_task(task_rec):
+    #             raise RuntimeError(f"{task_type} task {task_rec.task_id} failed")
+
+    #         self.master.mark_status(
+    #             task_type,
+    #             task_rec.task_id,
+    #             TaskState.COMPLETED,
+    #             task_rec.worker_id,
+    #         )
+
+    #         results.append(str(task_rec.payload["output_object"]))
+
+    #     return results
+
     def _drain_phase(self, task_type: str) -> list[str]:
-        results = []
+        assigned_tasks = self._assign_all_tasks(task_type)
 
-        while not self._phase_completed(task_type):
-            task_rec = (
-                self.master.assign_map_task()
-                if task_type == "map"
-                else self.master.assign_reduce_task()
-            )
+        if not assigned_tasks:
+            raise RuntimeError(f"No available {task_type} task")
 
-            if task_rec is None:
-                raise RuntimeError(f"No available {task_type} task")
+        task_jobs = [
+            self.kuber.submit_task(task_rec)
+            for task_rec in assigned_tasks
+        ]
 
-            if not self.execute_task(task_rec):
+        results_by_task_id = self.kuber.wait_for_tasks(task_jobs)
+
+        output_objects: list[str] = []
+
+        for task_rec in assigned_tasks:
+            success = results_by_task_id.get(task_rec.task_id, False)
+
+            if not success:
+                self.master.mark_status(
+                    task_type,
+                    task_rec.task_id,
+                    TaskState.FAILED,
+                    task_rec.worker_id,
+                )
                 raise RuntimeError(f"{task_type} task {task_rec.task_id} failed")
 
             self.master.mark_status(
@@ -131,9 +169,9 @@ class Scheduler:
                 task_rec.worker_id,
             )
 
-            results.append(str(task_rec.payload["output_object"]))
+            output_objects.append(str(task_rec.payload["output_object"]))
 
-        return results
+        return output_objects
 
 
     def _phase_completed(self, task_type: str) -> bool:
@@ -235,3 +273,20 @@ class Scheduler:
             )
 
         return tasks
+
+    def _assign_all_tasks(self, task_type: str) -> list[TaskRecord]:
+        assigned_tasks: list[TaskRecord] = []
+
+        while True:
+            task_rec = (
+                self.master.assign_map_task()
+                if task_type == "map"
+                else self.master.assign_reduce_task()
+            )
+
+            if task_rec is None:
+                break
+
+            assigned_tasks.append(task_rec)
+
+        return assigned_tasks

@@ -85,3 +85,6 @@ class MinioStorage:
                 recursive=True,
             )
         ]
+
+    def stat_object(self, bucket_name: str, object_name: str):
+        return self.client.stat_object(bucket_name, object_name)
