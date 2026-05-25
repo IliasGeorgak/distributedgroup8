@@ -32,3 +32,28 @@ def test_reducer_basic(tmp_path):
         ["hello", 2],
         ["world", 1],
     ]
+
+
+def test_reducer_reads_streamed_jsonl_shuffle_input(tmp_path):
+    file1 = tmp_path / "part1.jsonl"
+    file1.write_text(
+        "\n".join(
+            [
+                json.dumps({"map_task_id": "m1", "partition_id": 0}),
+                json.dumps(["hello", 1]),
+                json.dumps(["world", 1]),
+                json.dumps(["hello", 1]),
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    result = reduce_partitioned_word_count(
+        [file1],
+        {"r_partitions": 1, "reduce_partition_id": 0},
+    )
+
+    assert result["reduced"] == [
+        ["hello", 2],
+        ["world", 1],
+    ]

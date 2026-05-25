@@ -6,4 +6,9 @@ input_objects:
 output_bucket: betet
 output_object: results/map-task-001.json
 parameters:
+  operation: word_count
+  input_format: auto
+  text_field: text
   case_sensitive: false
+  r_partitions: 2
+  partition_function: sha256

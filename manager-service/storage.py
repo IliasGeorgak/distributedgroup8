@@ -43,6 +43,12 @@ class MinioStorage:
         self.ensure_bucket(bucket_name)
         self.client.fput_object(bucket_name, object_name, str(file_path))
 
+    def download_file(self, bucket_name: str, object_name: str, destination: str | Path) -> Path:
+        destination_path = Path(destination)
+        destination_path.parent.mkdir(parents=True, exist_ok=True)
+        self.client.fget_object(bucket_name, object_name, str(destination_path))
+        return destination_path
+
     def object_exists(self, bucket: str, obj: str) -> bool:
         try:
             self.client.stat_object(bucket, obj)

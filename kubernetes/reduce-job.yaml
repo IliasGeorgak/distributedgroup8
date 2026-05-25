@@ -30,8 +30,8 @@ spec:
               "task_id":"reduce-1",
               "task_type":"reduce",
               "input_bucket":"betet",
-              "input_objects":["results/test-map-shuffle-part-0.json"],
+              "input_objects":["results/job-3-map-1-shuffle-part-0.jsonl"],
               "output_bucket":"betet",
               "output_object":"results/reduce-output.json",
-              "parameters":{}
+              "parameters":{"operation":"word_count","r_partitions":1,"reduce_partition_id":0,"partition_function":"sha256"}
             }'

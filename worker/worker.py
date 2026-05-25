@@ -6,8 +6,8 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from master import Master, TaskState
-from mapper import map_to_key_value_pairs
-from reducer import PARTITION_FUNCTIONS, reduce_partitioned_word_count
+from mapper import map_to_key_value_pairs, stream_to_shuffle_partitions
+from reducer import reduce_partitioned_word_count
 from storage import download_object, upload_file
 from task import TaskMetadata
 
@@ -31,9 +31,16 @@ class Worker:
         with TemporaryDirectory(prefix=f"task-{metadata.task_id}-") as temp_dir:
             working_dir = Path(temp_dir)
             input_paths = self._download_inputs(metadata, working_dir)
-            task_result = task_handler(input_paths, metadata.parameters)
             if metadata.task_type == "map":
-                task_result = self._shuffle_map_output(task_result, metadata, working_dir)
+                task_result = stream_to_shuffle_partitions(
+                    input_paths=input_paths,
+                    parameters=metadata.parameters,
+                    working_dir=working_dir,
+                    map_task_id=metadata.task_id,
+                )
+                task_result = self._upload_streamed_shuffle_output(task_result, metadata)
+            else:
+                task_result = task_handler(input_paths, metadata.parameters)
 
             output_path = working_dir / "result.json"
             output_path.write_text(json.dumps(task_result, indent=2, sort_keys=True), encoding="utf-8")
@@ -43,69 +50,46 @@ class Worker:
             persisted_output.write_text(output_path.read_text(encoding="utf-8"), encoding="utf-8")
             return persisted_output
 
-    def _shuffle_map_output(
+    def _upload_streamed_shuffle_output(
         self,
         map_result: dict[str, object],
         metadata: TaskMetadata,
-        working_dir: Path,
     ) -> dict[str, object]:
-        raw_pairs = map_result.get("intermediate_pairs")
-        if not isinstance(raw_pairs, list):
-            raise ValueError("Mapper output must include 'intermediate_pairs'")
+        shuffle_payload = map_result.get("shuffle")
+        if not isinstance(shuffle_payload, dict):
+            raise ValueError("Mapper output must include 'shuffle'")
 
-        r_partitions = int(metadata.parameters.get("r_partitions", 1))
-        if r_partitions <= 0:
-            raise ValueError("'r_partitions' must be >= 1")
+        local_partition_paths = shuffle_payload.get("local_partition_paths")
+        if not isinstance(local_partition_paths, list):
+            raise ValueError("Mapper shuffle output must include 'local_partition_paths'")
 
-        partition_function_name = str(metadata.parameters.get("partition_function", "md5")).lower()
-        hash_function = PARTITION_FUNCTIONS.get(partition_function_name)
-        if hash_function is None:
-            supported = ", ".join(sorted(PARTITION_FUNCTIONS))
-            raise ValueError(
-                f"Unsupported partition_function '{partition_function_name}'. Supported: {supported}"
-            )
-
-        partitioned_pairs: list[list[list[object]]] = [[] for _ in range(r_partitions)]
-        for pair in raw_pairs:
-            if not isinstance(pair, list) or len(pair) != 2:
-                raise ValueError("Each mapper intermediate pair must be [key, value]")
-            key, value = pair
-            partition_id = hash_function(str(key)) % r_partitions
-            partitioned_pairs[partition_id].append([str(key), int(value)])
+        partition_pair_counts = shuffle_payload.get("partition_pair_counts")
+        if not isinstance(partition_pair_counts, list):
+            raise ValueError("Mapper shuffle output must include 'partition_pair_counts'")
 
         base_output_object = Path(metadata.output_object)
         object_stem = base_output_object.stem
         object_parent = "" if str(base_output_object.parent) == "." else f"{base_output_object.parent}/"
 
         partition_objects: list[dict[str, object]] = []
-        for partition_id, pairs in enumerate(partitioned_pairs):
-            partition_payload = {
-                "map_task_id": metadata.task_id,
-                "partition_id": partition_id,
-                "intermediate_pairs": pairs,
-            }
-            local_partition_path = working_dir / f"shuffle-partition-{partition_id}.json"
-            local_partition_path.write_text(
-                json.dumps(partition_payload, indent=2, sort_keys=True),
-                encoding="utf-8",
-            )
-
-            object_name = f"{object_parent}{object_stem}-shuffle-part-{partition_id}.json"
+        for partition_id, raw_path in enumerate(local_partition_paths):
+            local_partition_path = Path(str(raw_path))
+            object_name = f"{object_parent}{object_stem}-shuffle-part-{partition_id}.jsonl"
             upload_file(metadata.output_bucket, object_name, local_partition_path)
             partition_objects.append(
                 {
                     "partition_id": partition_id,
                     "object_name": object_name,
-                    "pair_count": len(pairs),
+                    "pair_count": int(partition_pair_counts[partition_id]),
                 }
             )
 
         enriched_result = dict(map_result)
-        enriched_result["shuffle"] = {
-            "r_partitions": r_partitions,
-            "partition_function": partition_function_name,
-            "partition_objects": partition_objects,
-        }
+        enriched_shuffle = dict(shuffle_payload)
+        enriched_shuffle["partition_objects"] = partition_objects
+        enriched_shuffle.pop("local_partition_paths", None)
+        enriched_shuffle.pop("partition_pair_counts", None)
+        enriched_result["shuffle"] = enriched_shuffle
         return enriched_result
 
     def run_assigned_map_task(self, master: Master) -> Path | None:

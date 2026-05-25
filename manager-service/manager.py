@@ -5,6 +5,7 @@ import traceback
 import time
 from collections import defaultdict
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import Any, Callable
 
 from db import Database
@@ -86,8 +87,8 @@ class ManagerService:
             raise ValueError("split_count must be >= 1")
 
         source_path = Path(file_path)
-        lines = source_path.read_text(encoding="utf-8").splitlines()
-        total_lines = len(lines)
+        with source_path.open("r", encoding="utf-8") as source_file:
+            total_lines = sum(1 for _ in source_file)
 
         actual_splits = 1 if total_lines == 0 else min(split_count, total_lines)
         base_size = total_lines // actual_splits if actual_splits else 0
@@ -97,15 +98,37 @@ class ManagerService:
         split_dir.mkdir(parents=True, exist_ok=True)
 
         split_paths: list[Path] = []
-        start = 0
-        for split_id in range(actual_splits):
-            size = base_size + (1 if split_id < remainder else 0)
-            end = start + size
-            chunk_lines = lines[start:end]
-            split_path = split_dir / f"split_{split_id}.txt"
-            split_path.write_text("\n".join(chunk_lines), encoding="utf-8")
+        split_suffix = source_path.suffix or ".txt"
+        if total_lines == 0:
+            split_path = split_dir / f"split_0{split_suffix}"
+            split_path.write_text("", encoding="utf-8")
             split_paths.append(split_path)
-            start = end
+        else:
+            split_sizes = [
+                base_size + (1 if split_id < remainder else 0)
+                for split_id in range(actual_splits)
+            ]
+            split_id = 0
+            lines_in_current_split = 0
+            current_path = split_dir / f"split_{split_id}{split_suffix}"
+            current_file = current_path.open("w", encoding="utf-8")
+            split_paths.append(current_path)
+
+            try:
+                with source_path.open("r", encoding="utf-8") as source_file:
+                    for line in source_file:
+                        if lines_in_current_split >= split_sizes[split_id]:
+                            current_file.close()
+                            split_id += 1
+                            lines_in_current_split = 0
+                            current_path = split_dir / f"split_{split_id}{split_suffix}"
+                            current_file = current_path.open("w", encoding="utf-8")
+                            split_paths.append(current_path)
+
+                        current_file.write(line)
+                        lines_in_current_split += 1
+            finally:
+                current_file.close()
 
         print(f"Split {source_path} into {len(split_paths)} chunks under {split_dir}")
         return split_paths
@@ -458,29 +481,24 @@ class ManagerService:
         split_object_prefix: str,
         map_parameters: dict[str, Any] | None = None,
     ) -> tuple[list[str], list[dict[str, Any]]]:
-        text = self.storage.download_text(input_bucket, input_object)
-        lines = text.splitlines()
-
-        actual_splits = 1 if len(lines) == 0 else min(split_count, len(lines))
-        base_size = len(lines) // actual_splits
-        remainder = len(lines) % actual_splits
-
-        split_objects = []
-        start = 0
-
-        for split_id in range(actual_splits):
-            size = base_size + (1 if split_id < remainder else 0)
-            end = start + size
-
-            object_name = f"{split_object_prefix.strip('/')}/split_{split_id}.txt"
-            self.storage.upload_text(
+        suffix = Path(input_object).suffix or ".txt"
+        with TemporaryDirectory(prefix=f"job-{job_id}-input-") as temp_dir:
+            temp_path = Path(temp_dir)
+            local_input = self.storage.download_file(
                 input_bucket,
-                object_name,
-                "\n".join(lines[start:end]),
+                input_object,
+                temp_path / f"input{suffix}",
             )
-
-            split_objects.append(object_name)
-            start = end
+            split_paths = self.split_input_file(
+                file_path=local_input,
+                split_count=split_count,
+                destination_dir=temp_path / "splits",
+            )
+            split_objects = self.upload_split_files(
+                bucket_name=input_bucket,
+                split_paths=split_paths,
+                object_prefix=split_object_prefix,
+            )
 
         map_tasks = self.build_map_tasks_for_splits(
             job_id=job_id,
