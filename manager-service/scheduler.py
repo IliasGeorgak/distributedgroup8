@@ -26,7 +26,7 @@ class Scheduler:
         output_bucket: str,
         m_splits: int = 1,
         r_partitions: int = 1,
-        partition_function: str = "md5",
+        partition_function: str = "sha256",
         case_sensitive: bool = False,
     ) -> dict[str, Any]:
         map_tasks = self._build_map_tasks(

@@ -1,28 +1,32 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: ui
+  name: auth
   labels:
-    app: ui
+    app: auth
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: ui
+      app: auth
   template:
     metadata:
       labels:
-        app: ui
+        app: auth
     spec:
       containers:
-      - name: ui
-        image: ${UI_IMAGE}
-        imagePullPolicy: ${UI_IMAGE_PULL_POLICY}
+      - name: auth
+        image: auth
+        imagePullPolicy: Never
         ports:
-        - containerPort: ${UI_PORT}
+        - containerPort: 8080
         envFrom:
         - secretRef:
             name: postgres-secret
+        - secretRef:
+            name: auth-secret
+        - configMapRef:
+            name: postgres-config
         - configMapRef:
             name: auth-config
         resources:
@@ -37,12 +41,12 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: ui-service
+  name: auth-service
 spec:
   selector:
-    app: ui
+    app: auth
   ports:
     - protocol: TCP
-      port: ${UI_PORT}
-      targetPort: ${UI_PORT}
-  type: LoadBalancer
+      port: 8080
+      targetPort: 8080
+  type: ClusterIP

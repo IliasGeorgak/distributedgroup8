@@ -9,16 +9,16 @@ from minio import Minio, S3Error
 import os, io
 
 
+def _env_bool(name: str, default: bool = False) -> bool:
+    return os.getenv(name, str(default)).lower() in {"1", "true", "yes", "on"}
+
+
 @dataclass(slots=True)
 class MinioConfig:
-    """endpoint: str = "localhost:9000"
-    access_key: str = "admin"
-    secret_key: str = "password123"
-    secure: bool = False  """
     endpoint: str = os.environ["MINIO_SERVER_URL"]
     access_key: str = os.environ["MINIO_ROOT_USER"]
     secret_key: str = os.environ["MINIO_ROOT_PASSWORD"]
-    secure: bool = False
+    secure: bool = _env_bool("MINIO_SECURE", False)
   
 
 

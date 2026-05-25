@@ -16,7 +16,7 @@ minikube image load <image name>
 #### Postgres is implemented as a stateful set using the default docker postgres image while the worker is placeholder verion using the aforementioned locally built image to test deployment and functionality. Note that all deployments as well as the postgres stateful set reference the postgres-config and postgres-secret files to define environment variables to set-up and connect to the db. While we are still using a local image in order to properly pull it you need to edit ui-deployment and manager-deployment.yaml:
 ```yaml
 image: <image name>
-imagePullPolicy: Never
+imagePullPolicy: ${IMAGE_PULL_POLICY}
 ```
 
 ## Running/Testing 
@@ -60,6 +60,5 @@ minikube tunnel
 kubectl get svc
 ```
 ### For the external ips and ports
-
 
 

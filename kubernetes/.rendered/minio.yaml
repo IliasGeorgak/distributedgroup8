@@ -7,11 +7,11 @@ spec:
     app: minio
   ports:
     - name: api
-      port: ${MINIO_API_PORT}
-      targetPort: ${MINIO_API_PORT}
+      port: 9000
+      targetPort: 9000
     - name: console
-      port: ${MINIO_CONSOLE_PORT}
-      targetPort: ${MINIO_CONSOLE_PORT}
+      port: 9001
+      targetPort: 9001
   type: LoadBalancer
 ---
 apiVersion: v1
@@ -43,7 +43,7 @@ spec:
     spec:
       containers:
       - name: minio
-        image: ${MINIO_IMAGE}
+        image: minio/minio:latest
         args:
           - server
           - /data
@@ -53,8 +53,8 @@ spec:
         - secretRef:
             name: minio-secret
         ports:
-        - containerPort: ${MINIO_API_PORT}
-        - containerPort: ${MINIO_CONSOLE_PORT}
+        - containerPort: 9000
+        - containerPort: 9001
         volumeMounts:
         - name: data
           mountPath: /data

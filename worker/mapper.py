@@ -42,7 +42,7 @@ def stream_to_shuffle_partitions(
     if r_partitions <= 0:
         raise ValueError("'r_partitions' must be >= 1")
 
-    partition_function_name = str(parameters.get("partition_function", "md5")).lower()
+    partition_function_name = str(parameters.get("partition_function", "sha256")).lower()
     hash_function = get_partition_function(partition_function_name)
     mapper = get_mapper(parameters)
     combiner_flush_limit = int(parameters.get("combiner_flush_limit", 50000))

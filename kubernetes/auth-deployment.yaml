@@ -16,13 +16,15 @@ spec:
     spec:
       containers:
       - name: auth
-        image: auth
-        imagePullPolicy: Never
+        image: ${AUTH_IMAGE}
+        imagePullPolicy: ${AUTH_IMAGE_PULL_POLICY}
         ports:
-        - containerPort: 8080
+        - containerPort: ${AUTH_PORT}
         envFrom:
         - secretRef:
             name: postgres-secret
+        - secretRef:
+            name: auth-secret
         - configMapRef:
             name: postgres-config
         - configMapRef:
@@ -45,6 +47,6 @@ spec:
     app: auth
   ports:
     - protocol: TCP
-      port: 8080
-      targetPort: 8080
+      port: ${AUTH_PORT}
+      targetPort: ${AUTH_PORT}
   type: ClusterIP

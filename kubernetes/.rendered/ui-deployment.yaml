@@ -16,10 +16,10 @@ spec:
     spec:
       containers:
       - name: ui
-        image: ${UI_IMAGE}
-        imagePullPolicy: ${UI_IMAGE_PULL_POLICY}
+        image: ui
+        imagePullPolicy: Never
         ports:
-        - containerPort: ${UI_PORT}
+        - containerPort: 8081
         envFrom:
         - secretRef:
             name: postgres-secret
@@ -43,6 +43,6 @@ spec:
     app: ui
   ports:
     - protocol: TCP
-      port: ${UI_PORT}
-      targetPort: ${UI_PORT}
+      port: 8081
+      targetPort: 8081
   type: LoadBalancer

@@ -20,8 +20,8 @@ spec:
     app: postgres
   ports:
     - protocol: TCP
-      port: ${POSTGRES_PORT}
-      targetPort: ${POSTGRES_PORT}
+      port: 5432
+      targetPort: 5432
   type: ClusterIP
 
 ---
@@ -32,7 +32,7 @@ metadata:
   name: postgres-secret
 type: Opaque
 stringData:
-  POSTGRES_PASSWORD: "${POSTGRES_PASSWORD}"
+  POSTGRES_PASSWORD: "change-me"
 
 ---
 
@@ -56,10 +56,10 @@ spec:
     spec:
       containers:
       - name: postgres
-        image: ${POSTGRES_IMAGE}
-        imagePullPolicy: ${POSTGRES_IMAGE_PULL_POLICY}
+        image: db:latest
+        imagePullPolicy: Never
         ports:
-        - containerPort: ${POSTGRES_PORT}
+        - containerPort: 5432
         envFrom:
         - secretRef:
             name: postgres-secret

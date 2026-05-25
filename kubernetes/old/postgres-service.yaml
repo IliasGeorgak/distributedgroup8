@@ -8,5 +8,5 @@ spec:
     app: postgres
   ports:
     - protocol: TCP
-      port: 12345
-      targetPort: 5432
+      port: ${POSTGRES_SERVICE_PORT}
+      targetPort: ${POSTGRES_PORT}

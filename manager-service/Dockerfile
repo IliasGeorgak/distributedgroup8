@@ -7,7 +7,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY manager-service/ .
 
+ARG MANAGER_PORT=8000
+ENV MANAGER_PORT=${MANAGER_PORT}
 
-EXPOSE 8000
+EXPOSE ${MANAGER_PORT}
 
-CMD ["python", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["sh", "-c", "python -m uvicorn app.main:app --host 0.0.0.0 --port ${MANAGER_PORT}"]

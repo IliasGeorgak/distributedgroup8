@@ -8,5 +8,8 @@ RUN pip install --no-cache-dir -r auth_requirements.txt
 COPY . .
 
 WORKDIR /usr/src/app
-CMD ["uvicorn","app.main:app","--host","0.0.0.0","--port","8080"]
-#CMD ["sleep", "999999"]
+ARG AUTH_PORT=8080
+ENV AUTH_PORT=${AUTH_PORT}
+EXPOSE ${AUTH_PORT}
+
+CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${AUTH_PORT}"]

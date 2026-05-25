@@ -50,10 +50,10 @@ spec:
       automountServiceAccountToken: true
       containers:
       - name: manager
-        image: ${MANAGER_IMAGE}
-        imagePullPolicy: ${MANAGER_IMAGE_PULL_POLICY}
+        image: mngr
+        imagePullPolicy: Never
         ports:
-        - containerPort: ${MANAGER_PORT}
+        - containerPort: 8000
         envFrom:
         - secretRef:
             name: postgres-secret
@@ -65,9 +65,9 @@ spec:
             name: minio-config
         env:
         - name: WORKER_IMAGE
-          value: "${WORKER_IMAGE}"
+          value: "worker:latest"
         - name: WORKER_IMAGE_PULL_POLICY
-          value: "${WORKER_IMAGE_PULL_POLICY}"
+          value: "Never"
         - name: KUBERNETES_NAMESPACE
           valueFrom:
             fieldRef:
@@ -90,6 +90,6 @@ spec:
     app: manager
   ports:
     - protocol: TCP
-      port: ${MANAGER_PORT}
-      targetPort: ${MANAGER_PORT}
+      port: 8000
+      targetPort: 8000
   type: ClusterIP

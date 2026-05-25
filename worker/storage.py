@@ -1,24 +1,31 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 
 from minio import Minio
-import os 
+import os
 
-try:
-    url = os.environ["MINIO_SERVER_URL"]
-    access_key = os.environ["MINIO_ROOT_USER"]
-    secret_key = os.environ["MINIO_ROOT_PASSWORD"]
-except:
-    access_key ="admin"
-    secret_key ="password123"
-    url = "localhost:9000"
+
+def _env_bool(name: str, default: bool = False) -> bool:
+    return os.getenv(name, str(default)).lower() in {"1", "true", "yes", "on"}
+
+
+@dataclass(slots=True)
+class MinioConfig:
+    endpoint: str = os.environ["MINIO_SERVER_URL"]
+    access_key: str = os.environ["MINIO_ROOT_USER"]
+    secret_key: str = os.environ["MINIO_ROOT_PASSWORD"]
+    secure: bool = _env_bool("MINIO_SECURE", False)
+
+
+config = MinioConfig()
 
 client = Minio(
-    url,
-    access_key,
-    secret_key,
-    secure=False,
+    config.endpoint,
+    access_key=config.access_key,
+    secret_key=config.secret_key,
+    secure=config.secure,
 )
 
 

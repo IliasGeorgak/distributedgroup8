@@ -1,12 +1,14 @@
 # cli.py
 import argparse
 import json
+import os
 from pathlib import Path
 
 import requests
 
-UI_SERVICE_URL = "http://localhost:8081"
-TOKEN_FILE = Path(".mapreduce_token.json")
+UI_SERVICE_URL = os.environ["MAPREDUCE_UI_SERVICE_URL"].rstrip("/")
+TOKEN_FILE = Path(os.getenv("MAPREDUCE_TOKEN_FILE", ".mapreduce_token.json"))
+REQUEST_TIMEOUT_SECONDS = float(os.getenv("MAPREDUCE_REQUEST_TIMEOUT_SECONDS", "30"))
 
 
 def save_token(token_data: dict) -> None:
@@ -35,7 +37,7 @@ def login(username: str, password: str) -> None:
             "username": username,
             "password": password,
         },
-        timeout=5,
+        timeout=REQUEST_TIMEOUT_SECONDS,
     )
 
     if response.status_code != 200:
@@ -62,7 +64,7 @@ def register(username: str, password: str, email: str) -> None:
     response = requests.post(
         f"{UI_SERVICE_URL}/auth/register",
         json=payload,
-        timeout=5,
+        timeout=REQUEST_TIMEOUT_SECONDS,
     )
 
     print("Status:", response.status_code)
@@ -76,13 +78,29 @@ def jobs_list() -> None:
     response = requests.get(
         f"{UI_SERVICE_URL}/jobs",
         headers=headers,
-        timeout=5,
+        timeout=REQUEST_TIMEOUT_SECONDS,
     )
 
     print("Status:", response.status_code)
     print(response.text)
 
-def jobs_submit(input_file: str, split_count: int, r_partitions: int, case_sensitive: bool) -> None:
+def _content_type_for_path(input_path: Path) -> str:
+    if input_path.suffix.lower() == ".json":
+        return "application/json"
+    if input_path.suffix.lower() == ".jsonl":
+        return "application/x-ndjson"
+    return "text/plain"
+
+
+def jobs_submit(
+    input_file: str,
+    split_count: int,
+    r_partitions: int,
+    case_sensitive: bool,
+    operation: str,
+    input_format: str,
+    partition_function: str,
+) -> None:
     headers = get_auth_headers()
     if headers is None:
         return
@@ -97,14 +115,17 @@ def jobs_submit(input_file: str, split_count: int, r_partitions: int, case_sensi
             f"{UI_SERVICE_URL}/jobs/submit_job",
             headers=headers,
             files={
-                "input_file": (input_path.name, file, "text/plain"),
+                "input_file": (input_path.name, file, _content_type_for_path(input_path)),
             },
             data={
                 "split_count": str(split_count),
                 "r_partitions": str(r_partitions),
                 "case_sensitive": str(case_sensitive).lower(),
+                "operation": operation,
+                "input_format": input_format,
+                "partition_function": partition_function,
             },
-            timeout=30,
+            timeout=REQUEST_TIMEOUT_SECONDS,
         )
 
     print("Status:", response.status_code)
@@ -118,7 +139,7 @@ def jobs_status(job_id: int) -> None:
     response = requests.get(
         f"{UI_SERVICE_URL}/jobs/{job_id}",
         headers=headers,
-        timeout=5,
+        timeout=REQUEST_TIMEOUT_SECONDS,
     )
 
     print("Status:", response.status_code)
@@ -132,7 +153,7 @@ def jobs_results(job_id: int) -> None:
     response = requests.get(
         f"{UI_SERVICE_URL}/jobs/{job_id}/results",
         headers=headers,
-        timeout=10,
+        timeout=REQUEST_TIMEOUT_SECONDS,
     )
 
     print("Status:", response.status_code)
@@ -154,7 +175,7 @@ def admin_create_user(username: str, password: str, email: str, role: str) -> No
         f"{UI_SERVICE_URL}/admin/users",
         json=payload,
         headers=headers,
-        timeout=5,
+        timeout=REQUEST_TIMEOUT_SECONDS,
     )
 
     print("Status:", response.status_code)
@@ -167,7 +188,7 @@ def admin_delete_user(user_id: int) -> None:
     response = requests.delete(
         f"{UI_SERVICE_URL}/users/{user_id}",
         headers=headers,
-        timeout=5
+        timeout=REQUEST_TIMEOUT_SECONDS,
     )
     
     print("Status:", response.status_code)
@@ -181,7 +202,7 @@ def admin_view_users() -> None:
     response = requests.get(
         f"{UI_SERVICE_URL}/admin/users",
         headers=headers,
-        timeout=5,
+        timeout=REQUEST_TIMEOUT_SECONDS,
     )
 
     print("Status:", response.status_code)
@@ -219,6 +240,9 @@ def main() -> None:
     jobs_submit_parser.add_argument("--split_count", type=int, default=4)
     jobs_submit_parser.add_argument("--r_partitions", type=int, default=3)
     jobs_submit_parser.add_argument("--case_sensitive", action="store_true")
+    jobs_submit_parser.add_argument("--operation", default="word_count")
+    jobs_submit_parser.add_argument("--input_format", default="auto")
+    jobs_submit_parser.add_argument("--partition_function", default="sha256")
 
     jobs_status_parser = jobs_subparsers.add_parser("status")
     jobs_status_parser.add_argument("--job_id", required=True, type=int)
@@ -262,6 +286,9 @@ def main() -> None:
             args.split_count,
             args.r_partitions,
             args.case_sensitive,
+            args.operation,
+            args.input_format,
+            args.partition_function,
         )
     elif args.command == "jobs" and args.jobs_command == "status":
         jobs_status(args.job_id)

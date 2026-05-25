@@ -9,16 +9,11 @@ import os
 
 @dataclass(slots=True)
 class DatabaseConfig:
-    """ host: str = "localhost"
-    database: str = "jobsdb"
-    user: str = "admin"
-    password: str = "admin"
-    port: int = 5432 """
     host: str = os.environ["POSTGRES_HOST"]
     database: str = os.environ["POSTGRES_JOBS_DB"]
     user: str = os.environ["POSTGRES_USER"]
     password: str = os.environ["POSTGRES_PASSWORD"]
-    port: int = os.environ["POSTGRES_PORT"]
+    port: int = int(os.environ["POSTGRES_PORT"])
 
 
 class Database:
@@ -60,7 +55,9 @@ class Database:
                 cursor.execute("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS split_count INTEGER;")
                 cursor.execute("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS r_partitions INTEGER;")
                 cursor.execute("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS case_sensitive BOOLEAN DEFAULT FALSE;")
-                cursor.execute("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS partition_function TEXT DEFAULT 'md5';")
+                cursor.execute("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS operation TEXT DEFAULT 'word_count';")
+                cursor.execute("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS input_format TEXT DEFAULT 'auto';")
+                cursor.execute("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS partition_function TEXT DEFAULT 'sha256';")
                 cursor.execute("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;")
 
                 cursor.execute(
@@ -294,7 +291,9 @@ class Database:
         split_count: int,
         r_partitions: int,
         case_sensitive: bool,
-        partition_function: str = "md5",
+        operation: str = "word_count",
+        input_format: str = "auto",
+        partition_function: str = "sha256",
     ) -> int:
         with self.get_connection() as conn:
             with conn.cursor() as cursor:
@@ -307,9 +306,11 @@ class Database:
                         split_count,
                         r_partitions,
                         case_sensitive,
+                        operation,
+                        input_format,
                         partition_function
                     )
-                    VALUES (%s, %s, %s, %s, %s, %s, %s)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                     RETURNING job_id;
                     """,
                     (
@@ -319,6 +320,8 @@ class Database:
                         split_count,
                         r_partitions,
                         case_sensitive,
+                        operation,
+                        input_format,
                         partition_function,
                     ),
                 )
@@ -348,7 +351,7 @@ class Database:
                     )
                     RETURNING job_id, status, input_bucket, input_object,
                             split_count, r_partitions, case_sensitive,
-                            partition_function;
+                            operation, input_format, partition_function;
                     """
                 )
                 row = cursor.fetchone()
@@ -365,7 +368,9 @@ class Database:
             "split_count": row[4],
             "r_partitions": row[5],
             "case_sensitive": row[6],
-            "partition_function": row[7],
+            "operation": row[7],
+            "input_format": row[8],
+            "partition_function": row[9],
         }
     
     def update_job_submission_metadata(
@@ -377,6 +382,8 @@ class Database:
         split_count: int,
         r_partitions: int,
         case_sensitive: bool,
+        operation: str,
+        input_format: str,
         partition_function: str,
     ) -> dict[str, Any]:
         with self.get_connection() as conn:
@@ -390,12 +397,14 @@ class Database:
                         split_count = %s,
                         r_partitions = %s,
                         case_sensitive = %s,
+                        operation = %s,
+                        input_format = %s,
                         partition_function = %s,
                         updated_at = CURRENT_TIMESTAMP
                     WHERE job_id = %s
                     RETURNING job_id, status, input_bucket, input_object,
                             split_count, r_partitions, case_sensitive,
-                            partition_function;
+                            operation, input_format, partition_function;
                     """,
                     (
                         status,
@@ -404,6 +413,8 @@ class Database:
                         split_count,
                         r_partitions,
                         case_sensitive,
+                        operation,
+                        input_format,
                         partition_function,
                         job_id,
                     ),
@@ -422,5 +433,7 @@ class Database:
             "split_count": row[4],
             "r_partitions": row[5],
             "case_sensitive": row[6],
-            "partition_function": row[7],
+            "operation": row[7],
+            "input_format": row[8],
+            "partition_function": row[9],
         }

@@ -1,16 +1,19 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: reduce-job
+  name: worker-job
 spec:
+  ttlSecondsAfterFinished: 30
+
   template:
     spec:
       restartPolicy: Never
 
       containers:
       - name: worker
-        image: ${WORKER_IMAGE}
-        imagePullPolicy: ${WORKER_IMAGE_PULL_POLICY}
+
+        image: worker:latest
+        imagePullPolicy: Never
 
         envFrom:
         - secretRef:
@@ -26,4 +29,4 @@ spec:
 
         args:
           - "--task-json"
-          - '${REDUCE_TASK_JSON}'
+          - '{"task_id":"map-1","task_type":"map","input_bucket":"mapreduce","input_objects":["inputs/input.txt"],"output_bucket":"mapreduce","output_object":"results/map-1.json","parameters":{"operation":"word_count","input_format":"auto","case_sensitive":false,"r_partitions":1,"partition_function":"sha256"}}'

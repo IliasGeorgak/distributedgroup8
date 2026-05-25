@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import traceback
 import time
 from collections import defaultdict
@@ -360,7 +361,7 @@ class ManagerService:
         worker_ids: list[str],
         split_count: int,
         r_partitions: int,
-        partition_function: str = "md5",
+        partition_function: str = "sha256",
         case_sensitive: bool = False,
     ) -> dict[str, Any]:
         split_dir = Path(__file__).with_name("splits")
@@ -432,7 +433,9 @@ class ManagerService:
         split_count: int,
         r_partitions: int,
         case_sensitive: bool = False,
-        partition_function: str = "md5",
+        operation: str = "word_count",
+        input_format: str = "auto",
+        partition_function: str = "sha256",
     ) -> dict[str, Any]:
         self.database.init_schema()
         self.storage.ensure_bucket(bucket_name)
@@ -456,6 +459,8 @@ class ManagerService:
             split_count=split_count,
             r_partitions=r_partitions,
             case_sensitive=case_sensitive,
+            operation=operation,
+            input_format=input_format,
             partition_function=partition_function,
         )
 
@@ -469,6 +474,9 @@ class ManagerService:
             "split_count": split_count,
             "r_partitions": r_partitions,
             "case_sensitive": case_sensitive,
+            "operation": operation,
+            "input_format": input_format,
+            "partition_function": partition_function,
         }
 
     def prepare_map_tasks_from_minio_input(
@@ -564,6 +572,8 @@ class ManagerService:
             split_count=int(job["split_count"]),
             split_object_prefix=f"inputs/job-{job_id}/splits",
             map_parameters={
+                "operation": job["operation"],
+                "input_format": job["input_format"],
                 "case_sensitive": bool(job["case_sensitive"]),
                 "r_partitions": int(job["r_partitions"]),
                 "partition_function": job["partition_function"],
@@ -619,11 +629,11 @@ class ManagerService:
 
 def main() -> None:
     manager = ManagerService()
-    bucket_name = "betet"
-    input_file = Path(__file__).with_name("test_input.txt")
-    split_count = 4
-    r_partitions = 3
-    partition_function = "md5"
+    bucket_name = os.getenv("MANAGER_DEFAULT_BUCKET", "mapreduce")
+    input_file = Path(os.getenv("MANAGER_DEMO_INPUT_FILE", str(Path(__file__).with_name("test_input.txt"))))
+    split_count = int(os.getenv("MANAGER_DEMO_SPLIT_COUNT", "4"))
+    r_partitions = int(os.getenv("MANAGER_DEMO_R_PARTITIONS", "3"))
+    partition_function = os.getenv("MANAGER_DEMO_PARTITION_FUNCTION", "sha256")
 
     job_id = manager.bootstrap(default_bucket=bucket_name, seed_task_count=split_count)
     pipeline_result = manager.run_pipeline(

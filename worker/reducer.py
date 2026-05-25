@@ -80,7 +80,7 @@ def reduce_partitioned_word_count(input_paths: list[Path], parameters: dict[str,
     if target_partition_id is not None and not (0 <= target_partition_id < r_partitions):
         raise ValueError("'reduce_partition_id' must be in [0, r_partitions)")
 
-    partition_function_name = str(parameters.get("partition_function", "md5")).lower()
+    partition_function_name = str(parameters.get("partition_function", "sha256")).lower()
     get_partition_function(partition_function_name)
     reducer = get_reducer(parameters)
 

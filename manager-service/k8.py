@@ -1,4 +1,5 @@
 import json
+import os
 import re
 import time
 from pathlib import Path
@@ -9,7 +10,7 @@ from jinja2 import Environment, FileSystemLoader
 from master import TaskRecord
 
 class Kuber:
-    def __init__(self, namespace: str = "default",image: str = "worker:latest") -> None:
+    def __init__(self, namespace: str | None = None, image: str | None = None) -> None:
         service_account_token = Path(
             "/var/run/secrets/kubernetes.io/serviceaccount/token"
         )
@@ -17,8 +18,9 @@ class Kuber:
             config.load_incluster_config()
         except config.ConfigException:
             config.load_kube_config()
-        self.namespace = namespace
-        self.image = image
+        self.namespace = namespace or os.getenv("KUBERNETES_NAMESPACE", "default")
+        self.image = image or os.environ["WORKER_IMAGE"]
+        self.image_pull_policy = os.getenv("WORKER_IMAGE_PULL_POLICY", "IfNotPresent")
         self.api_client = client.ApiClient()
         if service_account_token.exists():
             token = service_account_token.read_text(encoding="utf-8").strip()
@@ -51,6 +53,7 @@ class Kuber:
         rendered_yaml = template.render(
             worker_id=worker_id,
             image=image,
+            image_pull_policy=self.image_pull_policy,
             args=args
         )
         return rendered_yaml
@@ -111,8 +114,4 @@ class Kuber:
 
 if __name__ == "__main__":
     kuber = Kuber()
-    worker_id = "worker1"
-    image = "python:3.9-slim"
-    command = "echo Hello from worker1"
-    yaml_path = kuber.create_worker(worker_id, image, command)
-    kuber.apply_worker(yaml_path)
+    print("Kubernetes worker launcher is configured.")

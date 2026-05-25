@@ -10,7 +10,7 @@ spec:
       containers:
         - name: worker
           image: {{ image }}
-          imagePullPolicy: Never
+          imagePullPolicy: {{ image_pull_policy }}
           command: ["python3", "worker.py"]
           args:
           {% for arg in args %}

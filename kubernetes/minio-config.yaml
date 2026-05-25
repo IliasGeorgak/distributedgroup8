@@ -4,8 +4,8 @@ metadata:
   name: minio-secret
 type: Opaque
 stringData:
-  MINIO_ROOT_USER: admin
-  MINIO_ROOT_PASSWORD: pass1234!
+  MINIO_ROOT_USER: "${MINIO_ROOT_USER}"
+  MINIO_ROOT_PASSWORD: "${MINIO_ROOT_PASSWORD}"
 
 ---
 apiVersion: v1
@@ -13,9 +13,10 @@ kind: ConfigMap
 metadata:
   name: minio-config
 data:
-  MINIO_BROWSER_REDIRECT_URL: "http://localhost:9001"
-  MINIO_SERVER_URL: "minio-service:9000"
-  MINIO_REGION_NAME: "local-dev"
-  MINIO_PROMETHEUS_AUTH_TYPE: "public"
+  MINIO_BROWSER_REDIRECT_URL: "${MINIO_BROWSER_REDIRECT_URL}"
+  MINIO_SERVER_URL: "${MINIO_SERVER_URL}"
+  MINIO_REGION_NAME: "${MINIO_REGION_NAME}"
+  MINIO_PROMETHEUS_AUTH_TYPE: "${MINIO_PROMETHEUS_AUTH_TYPE}"
+  MINIO_SECURE: "${MINIO_SECURE}"
 
 ---

@@ -7,6 +7,11 @@ import db
 app = FastAPI()
 
 DEFAULT_BUCKET = os.getenv("MANAGER_DEFAULT_BUCKET", "mapreduce")
+SUPPORTED_INPUT_SUFFIXES = {
+    suffix.strip().lower()
+    for suffix in os.getenv("MANAGER_SUPPORTED_INPUT_SUFFIXES", ".txt,.jsonl,.json").split(",")
+    if suffix.strip()
+}
 database =db.Database()
 
 import threading
@@ -47,6 +52,9 @@ def submit_job(
     split_count: int = Form(4),
     r_partitions: int = Form(3),
     case_sensitive: bool = Form(False),
+    operation: str = Form("word_count"),
+    input_format: str = Form("auto"),
+    partition_function: str = Form("sha256"),
     bucket_name: str = Form(DEFAULT_BUCKET),
 ):
     if split_count <= 0:
@@ -55,12 +63,12 @@ def submit_job(
     if r_partitions <= 0:
         raise HTTPException(status_code=400, detail="r_partitions must be >= 1")
 
-    if input_file.filename and not input_file.filename.endswith(".txt"):
-        raise HTTPException(status_code=400, detail="Only .txt input files are supported")
+    suffix = Path(input_file.filename or "input.txt").suffix or ".txt"
+    if suffix.lower() not in SUPPORTED_INPUT_SUFFIXES:
+        supported = ", ".join(sorted(SUPPORTED_INPUT_SUFFIXES))
+        raise HTTPException(status_code=400, detail=f"Supported input files: {supported}")
 
     manager = ManagerService()
-
-    suffix = Path(input_file.filename or "input.txt").suffix or ".txt"
 
     with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as temp_file:
         shutil.copyfileobj(input_file.file, temp_file)
@@ -74,6 +82,9 @@ def submit_job(
             split_count=split_count,
             r_partitions=r_partitions,
             case_sensitive=case_sensitive,
+            operation=operation,
+            input_format=input_format,
+            partition_function=partition_function,
         )
 
     except Exception as exc:
@@ -84,4 +95,3 @@ def submit_job(
 
     finally:
         input_path.unlink(missing_ok=True)
-
