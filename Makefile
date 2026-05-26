@@ -103,3 +103,27 @@ status:
 	kubectl get pods
 	kubectl get svc
 	kubectl get jobs
+
+	.PHONY: bench-docs bench-docs-stress bench-login bench-status bench-results
+
+bench-docs:
+	ab -n 1000 -c 50 http://localhost:$(UI_PORT)/docs
+
+bench-docs-stress:
+	ab -n 5000 -c 500 http://localhost:$(UI_PORT)/docs
+
+bench-login:
+	ab -n 500 -c 50 \
+	-p login.json \
+	-T application/json \
+	http://localhost:$(UI_PORT)/auth/login
+
+bench-status:
+	ab -n 1000 -c 50 \
+	-H "Authorization: Bearer $$TOKEN" \
+	http://localhost:$(UI_PORT)/jobs/9
+
+bench-results:
+	ab -n 500 -c 25 \
+	-H "Authorization: Bearer $$TOKEN" \
+	http://localhost:$(UI_PORT)/jobs/9/results
