@@ -10,9 +10,17 @@ from master import Master, TaskRecord, TaskState
 from k8 import Kuber   
 
 class Scheduler:
-    def __init__(self) -> None:
-        self.master = Master()
-        self.kuber = Kuber()
+    def __init__(
+        self,
+        master: Master | None = None,
+        kuber: Kuber | None = None,
+        database: Any | None = None,
+        max_task_attempts: int = 3,
+    ) -> None:
+        self.master = master or Master()
+        self.kuber = kuber or Kuber()
+        self.database = database
+        self.max_task_attempts = max(1, max_task_attempts)
 
     def execute_task(self, task:TaskRecord) -> bool:
        return self.kuber.exec(task)
@@ -110,6 +118,7 @@ class Scheduler:
 
     def _drain_phase(self, task_type: str) -> list[str]:
         results = []
+        attempts_by_task_id: dict[str, int] = defaultdict(int)
 
         while not self._phase_completed(task_type):
             task_rec = (
@@ -121,8 +130,30 @@ class Scheduler:
             if task_rec is None:
                 raise RuntimeError(f"No available {task_type} task")
 
-            if not self.execute_task(task_rec):
-                raise RuntimeError(f"{task_type} task {task_rec.task_id} failed")
+            self._mark_task_running(task_rec)
+
+            try:
+                task_succeeded = self.execute_task(task_rec)
+            except Exception:
+                task_succeeded = False
+
+            if not task_succeeded:
+                attempts_by_task_id[task_rec.task_id] += 1
+                attempts = attempts_by_task_id[task_rec.task_id]
+                self._record_task_failure(task_rec, attempts)
+
+                if attempts < self.max_task_attempts:
+                    self.master.mark_status(
+                        task_type,
+                        task_rec.task_id,
+                        TaskState.IDLE,
+                    )
+                    continue
+
+                raise RuntimeError(
+                    f"{task_type} task {task_rec.task_id} failed after "
+                    f"{self.max_task_attempts} attempts"
+                )
 
             self.master.mark_status(
                 task_type,
@@ -130,10 +161,36 @@ class Scheduler:
                 TaskState.COMPLETED,
                 task_rec.worker_id,
             )
+            self._mark_task_completed(task_rec)
 
             results.append(str(task_rec.payload["output_object"]))
 
         return results
+
+    def _mark_task_running(self, task_rec: TaskRecord) -> None:
+        if self.database is None:
+            return
+        self.database.mark_task_running_by_external_id(
+            external_task_id=task_rec.task_id,
+            worker_id=task_rec.worker_id,
+        )
+
+    def _mark_task_completed(self, task_rec: TaskRecord) -> None:
+        if self.database is None:
+            return
+        self.database.mark_task_completed_by_external_id(
+            external_task_id=task_rec.task_id,
+            worker_id=task_rec.worker_id,
+        )
+
+    def _record_task_failure(self, task_rec: TaskRecord, attempts: int) -> None:
+        if self.database is None:
+            return
+        self.database.record_task_failure_by_external_id(
+            external_task_id=task_rec.task_id,
+            worker_id=task_rec.worker_id,
+            max_attempts=self.max_task_attempts,
+        )
 
 
     def _phase_completed(self, task_type: str) -> bool:

@@ -47,7 +47,7 @@ class Kuber:
             image = self.image
         env = Environment(loader=FileSystemLoader(str(self.template_dir)))
         template = env.get_template("sample_job.yaml")
-        worker_id = self.sanitize_job_name(task_metadata.worker_id or task_metadata.task_id)
+        worker_id = self.worker_job_name(task_metadata.worker_id or task_metadata.task_id)
         args = self.build_args(task_metadata, worker_id)
 
         rendered_yaml = template.render(
@@ -73,15 +73,29 @@ class Kuber:
         name = re.sub(r"[^a-z0-9-]+", "-", value.lower()).strip("-")
         name = re.sub(r"-+", "-", name)
         return name[:63].rstrip("-") or "worker-job"
+
+    def worker_job_name(self, value: str) -> str:
+        suffix = str(int(time.time() * 1000))[-10:]
+        base = self.sanitize_job_name(value)
+        max_base_length = 63 - len(suffix) - 1
+        return f"{base[:max_base_length].rstrip('-')}-{suffix}"
     
     def wait_for_job_completion(self, job_name: str) -> bool:
+        timeout_seconds = int(os.getenv("WORKER_JOB_TIMEOUT_SECONDS", "900"))
+        started_at = time.monotonic()
+
         while True:
             job = self.batch.read_namespaced_job(job_name, self.namespace)
 
             if job.status.succeeded:
                 return True
 
-            if job.status.failed:
+            conditions = job.status.conditions or []
+            for condition in conditions:
+                if condition.type == "Failed" and condition.status == "True":
+                    return False
+
+            if time.monotonic() - started_at > timeout_seconds:
                 return False
 
             time.sleep(2)

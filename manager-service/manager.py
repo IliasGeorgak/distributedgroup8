@@ -17,6 +17,10 @@ class ManagerService:
     def __init__(self, database: Database | None = None, storage: MinioStorage | None = None) -> None:
         self.database = database or Database()
         self.storage = storage or MinioStorage()
+        self.max_task_attempts = int(os.getenv("MANAGER_MAX_TASK_ATTEMPTS", "3"))
+        self.max_job_attempts = int(os.getenv("MANAGER_MAX_JOB_ATTEMPTS", "3"))
+        self.failed_job_retry_delay_seconds = int(os.getenv("MANAGER_FAILED_JOB_RETRY_DELAY_SECONDS", "5"))
+        self.stale_job_seconds = int(os.getenv("MANAGER_STALE_JOB_SECONDS", "300"))
 
     def schedule_pending_tasks(
         self,
@@ -231,7 +235,10 @@ class ManagerService:
         return destination_path
 
     def run_map_stage(self, map_tasks: list[dict[str, Any]]) -> dict[str, Any]:
-        scheduler = Scheduler()
+        scheduler = Scheduler(
+            database=self.database,
+            max_task_attempts=self.max_task_attempts,
+        )
         result = scheduler.run_map_stage(map_tasks)
         print(
             "Map stage completed:",
@@ -243,7 +250,10 @@ class ManagerService:
         self,
         reduce_tasks: list[dict[str, Any]],
     ) -> dict[str, Any]:
-        scheduler = Scheduler()
+        scheduler = Scheduler(
+            database=self.database,
+            max_task_attempts=self.max_task_attempts,
+        )
         result = scheduler.run_reduce_stage(reduce_tasks)
         print(
             "Reduce stage completed:",
@@ -522,6 +532,11 @@ class ManagerService:
         self.database.init_schema()
 
         while True:
+            self.database.recover_stale_running_jobs(self.stale_job_seconds)
+            self.database.recover_retryable_failed_jobs(
+                max_attempts=self.max_job_attempts,
+                retry_delay_seconds=self.failed_job_retry_delay_seconds,
+            )
             job = self.database.claim_next_submitted_job()
 
             if job is None:
@@ -533,7 +548,16 @@ class ManagerService:
             except Exception as exc:
                 print(f"Job {job['job_id']} failed: {exc}", flush=True)
                 traceback.print_exc()
-                self.database.update_job_status(job["job_id"], "failed")
+                failure_result = self.database.record_job_failure(
+                    job_id=job["job_id"],
+                    max_attempts=self.max_job_attempts,
+                )
+                if failure_result["status"] == "submitted":
+                    print(
+                        f"Job {job['job_id']} will be retried "
+                        f"(max attempts: {self.max_job_attempts})",
+                        flush=True,
+                    )
 
     def collect_shuffle_partition_objects_from_minio(
         self,
@@ -580,9 +604,9 @@ class ManagerService:
             },
         )
 
-        self.database.create_tasks(
+        self.database.create_task_records(
             job_id=job_id,
-            num_tasks=len(map_tasks),
+            tasks=map_tasks,
             status="pending",
             task_type="map",
         )
@@ -611,9 +635,9 @@ class ManagerService:
             self.database.update_job_status(job_id, "completed")
             return
 
-        self.database.create_tasks(
+        self.database.create_task_records(
             job_id=job_id,
-            num_tasks=len(reduce_tasks),
+            tasks=reduce_tasks,
             status="pending",
             task_type="reduce",
         )

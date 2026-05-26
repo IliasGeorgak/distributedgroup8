@@ -68,6 +68,16 @@ spec:
           value: "${WORKER_IMAGE}"
         - name: WORKER_IMAGE_PULL_POLICY
           value: "${WORKER_IMAGE_PULL_POLICY}"
+        - name: WORKER_JOB_TIMEOUT_SECONDS
+          value: "${WORKER_JOB_TIMEOUT_SECONDS}"
+        - name: MANAGER_MAX_TASK_ATTEMPTS
+          value: "${MANAGER_MAX_TASK_ATTEMPTS}"
+        - name: MANAGER_MAX_JOB_ATTEMPTS
+          value: "${MANAGER_MAX_JOB_ATTEMPTS}"
+        - name: MANAGER_FAILED_JOB_RETRY_DELAY_SECONDS
+          value: "${MANAGER_FAILED_JOB_RETRY_DELAY_SECONDS}"
+        - name: MANAGER_STALE_JOB_SECONDS
+          value: "${MANAGER_STALE_JOB_SECONDS}"
         - name: KUBERNETES_NAMESPACE
           valueFrom:
             fieldRef:

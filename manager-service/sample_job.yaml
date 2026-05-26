@@ -4,6 +4,7 @@ metadata:
   name: {{ worker_id }}
 spec:
   backoffLimit: 2
+  ttlSecondsAfterFinished: 300
   template:
     spec:
       restartPolicy: Never

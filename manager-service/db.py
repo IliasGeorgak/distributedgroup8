@@ -58,6 +58,7 @@ class Database:
                 cursor.execute("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS operation TEXT DEFAULT 'word_count';")
                 cursor.execute("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS input_format TEXT DEFAULT 'auto';")
                 cursor.execute("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS partition_function TEXT DEFAULT 'sha256';")
+                cursor.execute("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS retry_count INTEGER DEFAULT 0;")
                 cursor.execute("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;")
 
                 cursor.execute(
@@ -78,6 +79,7 @@ class Database:
                     "ALTER TABLE tasks ADD COLUMN IF NOT EXISTS task_type TEXT DEFAULT 'map';"
                 )
                 cursor.execute("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS worker_id TEXT;")
+                cursor.execute("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS external_task_id TEXT;")
                 cursor.execute("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS retry_count INTEGER DEFAULT 0;")
                 cursor.execute(
                     "ALTER TABLE tasks ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;"
@@ -116,6 +118,40 @@ class Database:
                     )
             conn.commit()
 
+    def create_task_records(
+        self,
+        job_id: int,
+        tasks: list[dict[str, Any]],
+        status: str = "pending",
+        task_type: str | None = None,
+    ) -> None:
+        with self.get_connection() as conn:
+            with conn.cursor() as cursor:
+                if task_type is not None:
+                    cursor.execute(
+                        "DELETE FROM tasks WHERE job_id = %s AND task_type = %s;",
+                        (job_id, task_type),
+                    )
+                for task in tasks:
+                    cursor.execute(
+                        """
+                        INSERT INTO tasks (
+                            job_id,
+                            task_type,
+                            status,
+                            external_task_id
+                        )
+                        VALUES (%s, %s, %s, %s);
+                        """,
+                        (
+                            job_id,
+                            task_type or str(task["task_type"]),
+                            status,
+                            str(task["task_id"]),
+                        ),
+                    )
+            conn.commit()
+
     def update_task_status(self, task_id: int, status: str) -> dict[str, Any]:
         with self.get_connection() as conn:
             with conn.cursor() as cursor:
@@ -134,6 +170,93 @@ class Database:
 
         if row is None:
             raise ValueError(f"Unknown task_id '{task_id}'")
+        return self._task_row_to_dict(row)
+
+    def mark_task_running_by_external_id(
+        self,
+        external_task_id: str,
+        worker_id: str | None,
+    ) -> dict[str, Any] | None:
+        return self._update_task_by_external_id(
+            external_task_id=external_task_id,
+            status="running",
+            worker_id=worker_id,
+        )
+
+    def mark_task_completed_by_external_id(
+        self,
+        external_task_id: str,
+        worker_id: str | None,
+    ) -> dict[str, Any] | None:
+        return self._update_task_by_external_id(
+            external_task_id=external_task_id,
+            status="completed",
+            worker_id=worker_id,
+        )
+
+    def record_task_failure_by_external_id(
+        self,
+        external_task_id: str,
+        worker_id: str | None,
+        max_attempts: int,
+    ) -> dict[str, Any] | None:
+        failed_status = "failed"
+        retry_status = "pending"
+        with self.get_connection() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    """
+                    UPDATE tasks
+                    SET retry_count = COALESCE(retry_count, 0) + 1,
+                        status = CASE
+                            WHEN COALESCE(retry_count, 0) + 1 >= %s THEN %s
+                            ELSE %s
+                        END,
+                        worker_id = %s,
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE external_task_id = %s
+                      AND COALESCE(status, '') <> 'completed'
+                    RETURNING task_id, job_id, task_type, status, worker_id, retry_count;
+                    """,
+                    (
+                        max_attempts,
+                        failed_status,
+                        retry_status,
+                        worker_id,
+                        external_task_id,
+                    ),
+                )
+                row = cursor.fetchone()
+            conn.commit()
+
+        if row is None:
+            return None
+        return self._task_row_to_dict(row)
+
+    def _update_task_by_external_id(
+        self,
+        external_task_id: str,
+        status: str,
+        worker_id: str | None,
+    ) -> dict[str, Any] | None:
+        with self.get_connection() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    """
+                    UPDATE tasks
+                    SET status = %s,
+                        worker_id = %s,
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE external_task_id = %s
+                    RETURNING task_id, job_id, task_type, status, worker_id, retry_count;
+                    """,
+                    (status, worker_id, external_task_id),
+                )
+                row = cursor.fetchone()
+            conn.commit()
+
+        if row is None:
+            return None
         return self._task_row_to_dict(row)
 
     def get_pending_tasks(self, task_type: str | None = None) -> list[dict[str, Any]]:
@@ -188,11 +311,80 @@ class Database:
                 cursor.execute(
                     """
                     UPDATE jobs
-                    SET status = %s
+                    SET status = %s,
+                        updated_at = CURRENT_TIMESTAMP
                     WHERE job_id = %s
                     RETURNING job_id, status, created_at;
                     """,
                     (status, job_id),
+                )
+                row = cursor.fetchone()
+            conn.commit()
+
+        if row is None:
+            raise ValueError(f"Unknown job_id '{job_id}'")
+        return {
+            "job_id": row[0],
+            "status": row[1],
+            "created_at": row[2],
+        }
+
+    def recover_stale_running_jobs(self, stale_after_seconds: int) -> int:
+        with self.get_connection() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    """
+                    UPDATE jobs
+                    SET status = 'submitted',
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE status IN ('running', 'running_map', 'map_completed', 'running_reduce')
+                      AND updated_at < CURRENT_TIMESTAMP - (%s * INTERVAL '1 second');
+                    """,
+                    (stale_after_seconds,),
+                )
+                recovered_count = cursor.rowcount
+            conn.commit()
+        return int(recovered_count)
+
+    def recover_retryable_failed_jobs(
+        self,
+        max_attempts: int,
+        retry_delay_seconds: int,
+    ) -> int:
+        with self.get_connection() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    """
+                    UPDATE jobs
+                    SET status = 'submitted',
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE status = 'failed'
+                      AND COALESCE(retry_count, 0) < %s
+                      AND updated_at < CURRENT_TIMESTAMP - (%s * INTERVAL '1 second');
+                    """,
+                    (max_attempts, retry_delay_seconds),
+                )
+                recovered_count = cursor.rowcount
+            conn.commit()
+        return int(recovered_count)
+
+    def record_job_failure(self, job_id: int, max_attempts: int) -> dict[str, Any]:
+        with self.get_connection() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    """
+                    UPDATE jobs
+                    SET retry_count = COALESCE(retry_count, 0) + 1,
+                        status = CASE
+                            WHEN COALESCE(retry_count, 0) + 1 < %s
+                            THEN 'submitted'
+                            ELSE 'failed'
+                        END,
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE job_id = %s
+                    RETURNING job_id, status, created_at;
+                    """,
+                    (max_attempts, job_id),
                 )
                 row = cursor.fetchone()
             conn.commit()

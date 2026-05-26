@@ -11,6 +11,10 @@ MANAGER_IMAGE_PULL_POLICY ?= Never
 MANAGER_PORT ?= 8000
 MANAGER_SERVICE_URL ?= http://manager-service:8000
 MANAGER_DEFAULT_BUCKET ?= mapreduce
+MANAGER_MAX_TASK_ATTEMPTS ?= 3
+MANAGER_MAX_JOB_ATTEMPTS ?= 3
+MANAGER_FAILED_JOB_RETRY_DELAY_SECONDS ?= 5
+MANAGER_STALE_JOB_SECONDS ?= 300
 
 UI_IMAGE ?= ui
 UI_IMAGE_PULL_POLICY ?= Never
@@ -18,6 +22,7 @@ UI_PORT ?= 8081
 
 WORKER_IMAGE ?= worker:latest
 WORKER_IMAGE_PULL_POLICY ?= Never
+WORKER_JOB_TIMEOUT_SECONDS ?= 900
 
 POSTGRES_IMAGE ?= db:latest
 POSTGRES_IMAGE_PULL_POLICY ?= Never
@@ -93,3 +98,8 @@ clean:
 
 clean-render:
 	rm -rf $(K8S_RENDERED_DIR)
+
+status:
+	kubectl get pods
+	kubectl get svc
+	kubectl get jobs
