@@ -10,8 +10,8 @@ from typing import Any, Callable
 
 WORD_PATTERN = re.compile(r"\b\w+\b")
 
-MapperFunction = Callable[[Any, dict[str, Any]], Iterable[tuple[Any, int]]]
-ReducerFunction = Callable[[Any, list[int], dict[str, Any]], Any]
+MapperFunction = Callable[[Any, dict[str, Any]], Iterable[tuple[Any, Any]]]
+ReducerFunction = Callable[[Any, list[Any], dict[str, Any]], Any]
 
 
 def _load_callable(dotted_path: str) -> Callable[..., Any]:
@@ -68,6 +68,13 @@ def _record_text(record: Any, parameters: dict[str, Any]) -> str:
     return json.dumps(record, sort_keys=True)
 
 
+def _record_document_id(record: Any, parameters: dict[str, Any]) -> str:
+    document_id_field = str(parameters.get("document_id_field", "document_id"))
+    if isinstance(record, dict) and document_id_field in record:
+        return str(record[document_id_field])
+    return str(parameters.get("document_id", "document"))
+
+
 def word_count_mapper(record: Any, parameters: dict[str, Any]) -> Iterable[tuple[str, int]]:
     case_sensitive = bool(parameters.get("case_sensitive", False))
     text = _record_text(record, parameters)
@@ -80,19 +87,47 @@ def line_count_mapper(record: Any, parameters: dict[str, Any]) -> Iterable[tuple
     yield key, 1
 
 
-def sum_reducer(key: Any, values: list[int], parameters: dict[str, Any]) -> Any:
+def inverted_index_mapper(record: Any, parameters: dict[str, Any]) -> Iterable[tuple[str, str]]:
+    case_sensitive = bool(parameters.get("case_sensitive", False))
+    text = _record_text(record, parameters)
+    document_id = _record_document_id(record, parameters)
+    for word in WORD_PATTERN.findall(text):
+        yield (word if case_sensitive else word.lower()), document_id
+
+
+def sum_reducer(key: Any, values: list[Any], parameters: dict[str, Any]) -> Any:
     return sum(values)
+
+
+def inverted_index_reducer(key: Any, values: list[Any], parameters: dict[str, Any]) -> Any:
+    document_counts: dict[str, int] = {}
+    for value in values:
+        if isinstance(value, dict):
+            for document_id, count in value.items():
+                document_counts[str(document_id)] = document_counts.get(str(document_id), 0) + int(count)
+        else:
+            document_id = str(value)
+            document_counts[document_id] = document_counts.get(document_id, 0) + 1
+
+    if bool(parameters.get("index_with_frequencies", False)):
+        return {
+            document_id: document_counts[document_id]
+            for document_id in sorted(document_counts)
+        }
+    return sorted(document_counts)
 
 
 MAPPER_FUNCTIONS: dict[str, MapperFunction] = {
     "word_count": word_count_mapper,
     "line_count": line_count_mapper,
+    "inverted_index": inverted_index_mapper,
 }
 
 REDUCER_FUNCTIONS: dict[str, ReducerFunction] = {
     "sum": sum_reducer,
     "word_count": sum_reducer,
     "line_count": sum_reducer,
+    "inverted_index": inverted_index_reducer,
 }
 
 

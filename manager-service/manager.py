@@ -209,6 +209,8 @@ class ManagerService:
         split_object_prefix: str,
         map_parameters: dict[str, Any] | None = None,
     ) -> tuple[list[Path], list[str], list[dict[str, Any]]]:
+        map_parameters = dict(map_parameters or {})
+        map_parameters.setdefault("document_id", Path(input_file).stem)
         split_paths = self.split_input_file(
             file_path=input_file,
             split_count=split_count,
@@ -312,8 +314,11 @@ class ManagerService:
         partition_objects: dict[int, list[str]],
         r_partitions: int,
         partition_function: str,
+        operation: str = "word_count",
+        extra_parameters: dict[str, Any] | None = None,
     ) -> list[dict[str, Any]]:
         reduce_tasks: list[dict[str, Any]] = []
+        base_parameters = extra_parameters or {}
         for partition_id in range(r_partitions):
             input_objects = partition_objects.get(partition_id, [])
             if not input_objects:
@@ -328,6 +333,8 @@ class ManagerService:
                     output_bucket=output_bucket,
                     output_object=f"results/job-{job_id}-reduce-{partition_id}.json",
                     parameters={
+                        **base_parameters,
+                        "operation": operation,
                         "r_partitions": r_partitions,
                         "partition_function": partition_function,
                         "reduce_partition_id": partition_id,
@@ -345,6 +352,8 @@ class ManagerService:
         map_result_paths: list[str | Path],
         r_partitions: int,
         partition_function: str,
+        operation: str = "word_count",
+        extra_parameters: dict[str, Any] | None = None,
     ) -> tuple[dict[int, list[str]], list[dict[str, Any]]]:
         partition_objects = self.collect_shuffle_partition_objects(map_result_paths)
         reduce_tasks = self.build_reduce_tasks_for_partitions(
@@ -354,6 +363,8 @@ class ManagerService:
             partition_objects=partition_objects,
             r_partitions=r_partitions,
             partition_function=partition_function,
+            operation=operation,
+            extra_parameters=extra_parameters,
         )
         return partition_objects, reduce_tasks
 
@@ -410,6 +421,7 @@ class ManagerService:
             map_result_paths=map_stage_result["map_results"],
             r_partitions=r_partitions,
             partition_function=partition_function,
+            operation="word_count",
         )
         (worker_dir / "shuffle.partition.objects.json").write_text(
             json.dumps(partition_objects, indent=2), encoding="utf-8"
@@ -450,10 +462,12 @@ class ManagerService:
         self.database.init_schema()
         self.storage.ensure_bucket(bucket_name)
 
-        suffix = Path(original_filename or "input.txt").suffix or ".txt"
+        original_path = Path(original_filename or "input.txt")
+        suffix = original_path.suffix or ".txt"
+        safe_input_name = original_path.name or f"input{suffix}"
 
         temp_job_id = self.database.create_job(status="creating")
-        input_object = f"inputs/job-{temp_job_id}/input{suffix}"
+        input_object = f"inputs/job-{temp_job_id}/{safe_input_name}"
 
         self.upload_input_file(
             bucket_name=bucket_name,
@@ -489,6 +503,80 @@ class ManagerService:
             "partition_function": partition_function,
         }
 
+    def submit_input_files_job(
+        self,
+        input_files: list[str | Path],
+        original_filenames: list[str | None],
+        bucket_name: str,
+        split_count: int,
+        r_partitions: int,
+        case_sensitive: bool = False,
+        operation: str = "word_count",
+        input_format: str = "auto",
+        partition_function: str = "sha256",
+    ) -> dict[str, Any]:
+        if len(input_files) != len(original_filenames):
+            raise ValueError("input_files and original_filenames must have the same length")
+        if not input_files:
+            raise ValueError("At least one input file is required")
+        if len(input_files) == 1:
+            return self.submit_input_job(
+                input_file=input_files[0],
+                original_filename=original_filenames[0],
+                bucket_name=bucket_name,
+                split_count=split_count,
+                r_partitions=r_partitions,
+                case_sensitive=case_sensitive,
+                operation=operation,
+                input_format=input_format,
+                partition_function=partition_function,
+            )
+
+        self.database.init_schema()
+        self.storage.ensure_bucket(bucket_name)
+
+        temp_job_id = self.database.create_job(status="creating")
+        input_objects: list[str] = []
+        for index, input_file in enumerate(input_files, start=1):
+            original_path = Path(original_filenames[index - 1] or f"input-{index}.txt")
+            suffix = original_path.suffix or ".txt"
+            safe_input_name = original_path.name or f"input-{index}{suffix}"
+            input_object = f"inputs/job-{temp_job_id}/{safe_input_name}"
+            self.upload_input_file(
+                bucket_name=bucket_name,
+                object_name=input_object,
+                file_path=input_file,
+            )
+            input_objects.append(input_object)
+
+        self.database.update_job_submission_metadata(
+            job_id=temp_job_id,
+            status="submitted",
+            input_bucket=bucket_name,
+            input_object=json.dumps(input_objects),
+            split_count=split_count,
+            r_partitions=r_partitions,
+            case_sensitive=case_sensitive,
+            operation=operation,
+            input_format=input_format,
+            partition_function=partition_function,
+        )
+
+        return {
+            "job_id": temp_job_id,
+            "status": "submitted",
+            "input": {
+                "bucket": bucket_name,
+                "objects": input_objects,
+            },
+            "split_count": split_count,
+            "r_partitions": r_partitions,
+            "case_sensitive": case_sensitive,
+            "operation": operation,
+            "input_format": input_format,
+            "partition_function": partition_function,
+        }
+
     def prepare_map_tasks_from_minio_input(
         self,
         job_id: int,
@@ -500,6 +588,8 @@ class ManagerService:
         map_parameters: dict[str, Any] | None = None,
     ) -> tuple[list[str], list[dict[str, Any]]]:
         suffix = Path(input_object).suffix or ".txt"
+        map_parameters = dict(map_parameters or {})
+        map_parameters.setdefault("document_id", Path(input_object).stem)
         with TemporaryDirectory(prefix=f"job-{job_id}-input-") as temp_dir:
             temp_path = Path(temp_dir)
             local_input = self.storage.download_file(
@@ -527,6 +617,65 @@ class ManagerService:
         )
 
         return split_objects, map_tasks
+
+    @staticmethod
+    def _job_input_objects(raw_input_object: str) -> list[str]:
+        try:
+            payload = json.loads(raw_input_object)
+        except json.JSONDecodeError:
+            return [raw_input_object]
+        if isinstance(payload, list):
+            return [str(item) for item in payload]
+        return [raw_input_object]
+
+    def prepare_map_tasks_from_minio_inputs(
+        self,
+        job_id: int,
+        input_bucket: str,
+        input_objects: list[str],
+        output_bucket: str,
+        split_count: int,
+        split_object_prefix: str,
+        map_parameters: dict[str, Any] | None = None,
+    ) -> tuple[list[str], list[dict[str, Any]]]:
+        all_split_objects: list[str] = []
+        map_tasks: list[dict[str, Any]] = []
+        task_index = 1
+
+        for input_object in input_objects:
+            document_id = Path(input_object).stem
+            split_objects, _ = self.prepare_map_tasks_from_minio_input(
+                job_id=job_id,
+                input_bucket=input_bucket,
+                input_object=input_object,
+                output_bucket=output_bucket,
+                split_count=split_count,
+                split_object_prefix=f"{split_object_prefix}/{document_id}",
+                map_parameters={
+                    **(map_parameters or {}),
+                    "document_id": document_id,
+                },
+            )
+            all_split_objects.extend(split_objects)
+
+            for split_object in split_objects:
+                map_tasks.append(
+                    self.build_task_metadata(
+                        task_id=f"job-{job_id}-map-{task_index}",
+                        task_type="map",
+                        input_bucket=input_bucket,
+                        input_objects=[split_object],
+                        output_bucket=output_bucket,
+                        output_object=f"results/job-{job_id}-map-{task_index}.json",
+                        parameters={
+                            **(map_parameters or {}),
+                            "document_id": document_id,
+                        },
+                    )
+                )
+                task_index += 1
+
+        return all_split_objects, map_tasks
 
     def job_monitor_loop(self, poll_interval_seconds: float = 5.0) -> None:
         self.database.init_schema()
@@ -588,10 +737,11 @@ class ManagerService:
     def execute_submitted_job(self, job: dict[str, Any]) -> None:
         job_id = int(job["job_id"])
 
-        split_objects, map_tasks = self.prepare_map_tasks_from_minio_input(
+        input_objects = self._job_input_objects(job["input_object"])
+        split_objects, map_tasks = self.prepare_map_tasks_from_minio_inputs(
             job_id=job_id,
             input_bucket=job["input_bucket"],
-            input_object=job["input_object"],
+            input_objects=input_objects,
             output_bucket=job["input_bucket"],
             split_count=int(job["split_count"]),
             split_object_prefix=f"inputs/job-{job_id}/splits",
@@ -629,6 +779,7 @@ class ManagerService:
             partition_objects=partition_objects,
             r_partitions=int(job["r_partitions"]),
             partition_function=job["partition_function"],
+            operation=job["operation"],
         )
         
         if not reduce_tasks:

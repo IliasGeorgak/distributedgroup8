@@ -115,26 +115,43 @@ def delete_user(
 
 @app.post("/jobs/submit_job")
 def submit_job(
-    input_file: UploadFile = File(...),
+    input_file: UploadFile | None = File(None),
+    input_files: list[UploadFile] | None = File(None),
     split_count: int = Form(4),
     r_partitions: int = Form(3),
     case_sensitive: bool = Form(False),
+    operation: str = Form("word_count"),
+    input_format: str = Form("auto"),
+    partition_function: str = Form("sha256"),
     current_user=Depends(get_current_user),
 ):
+    uploaded_files = input_files or ([input_file] if input_file is not None else [])
+    if not uploaded_files:
+        raise HTTPException(status_code=400, detail="At least one input file is required")
+
+    files = [
+        (
+            "input_files" if len(uploaded_files) > 1 else "input_file",
+            (
+                uploaded_file.filename,
+                uploaded_file.file,
+                uploaded_file.content_type or "text/plain",
+            ),
+        )
+        for uploaded_file in uploaded_files
+    ]
+
     try:
         response = requests.post(
             f"{MANAGER_SERVICE_URL}/jobs/submit_job",
-            files={
-                "input_file": (
-                    input_file.filename,
-                    input_file.file,
-                    input_file.content_type or "text/plain",
-                )
-            },
+            files=files,
             data={
                 "split_count": str(split_count),
                 "r_partitions": str(r_partitions),
                 "case_sensitive": str(case_sensitive).lower(),
+                "operation": operation,
+                "input_format": input_format,
+                "partition_function": partition_function,
             },
             timeout=30,
         )

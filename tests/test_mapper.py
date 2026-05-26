@@ -99,3 +99,24 @@ def test_streaming_mapper_supports_different_builtin_operation(tmp_path):
     lines = partition_path.read_text(encoding="utf-8").splitlines()
 
     assert [json.loads(line) for line in lines[1:]] == [["lines", 2]]
+
+
+def test_streaming_mapper_supports_inverted_index_document_ids(tmp_path):
+    input_file = tmp_path / "doc1.txt"
+    input_file.write_text("Hello world\nhello mapreduce\n", encoding="utf-8")
+
+    result = stream_to_shuffle_partitions(
+        [input_file],
+        {"operation": "inverted_index", "case_sensitive": False, "r_partitions": 1},
+        tmp_path,
+        "map-1",
+    )
+
+    partition_path = Path(result["shuffle"]["local_partition_paths"][0])
+    lines = partition_path.read_text(encoding="utf-8").splitlines()
+
+    assert [json.loads(line) for line in lines[1:]] == [
+        ["hello", {"doc1": 2}],
+        ["world", {"doc1": 1}],
+        ["mapreduce", {"doc1": 1}],
+    ]

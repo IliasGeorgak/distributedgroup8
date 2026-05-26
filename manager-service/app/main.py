@@ -48,7 +48,8 @@ def job_results(job_id: int, bucket_name: str = DEFAULT_BUCKET):
 
 @app.post("/jobs/submit_job")
 def submit_job(
-    input_file: UploadFile = File(...),
+    input_file: UploadFile | None = File(None),
+    input_files: list[UploadFile] | None = File(None),
     split_count: int = Form(4),
     r_partitions: int = Form(3),
     case_sensitive: bool = Form(False),
@@ -63,21 +64,29 @@ def submit_job(
     if r_partitions <= 0:
         raise HTTPException(status_code=400, detail="r_partitions must be >= 1")
 
-    suffix = Path(input_file.filename or "input.txt").suffix or ".txt"
-    if suffix.lower() not in SUPPORTED_INPUT_SUFFIXES:
-        supported = ", ".join(sorted(SUPPORTED_INPUT_SUFFIXES))
-        raise HTTPException(status_code=400, detail=f"Supported input files: {supported}")
+    uploaded_files = input_files or ([input_file] if input_file is not None else [])
+    if not uploaded_files:
+        raise HTTPException(status_code=400, detail="At least one input file is required")
+
+    for uploaded_file in uploaded_files:
+        suffix = Path(uploaded_file.filename or "input.txt").suffix or ".txt"
+        if suffix.lower() not in SUPPORTED_INPUT_SUFFIXES:
+            supported = ", ".join(sorted(SUPPORTED_INPUT_SUFFIXES))
+            raise HTTPException(status_code=400, detail=f"Supported input files: {supported}")
 
     manager = ManagerService()
+    input_paths: list[Path] = []
 
-    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as temp_file:
-        shutil.copyfileobj(input_file.file, temp_file)
-        input_path = Path(temp_file.name)
+    for uploaded_file in uploaded_files:
+        suffix = Path(uploaded_file.filename or "input.txt").suffix or ".txt"
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as temp_file:
+            shutil.copyfileobj(uploaded_file.file, temp_file)
+            input_paths.append(Path(temp_file.name))
 
     try:
-        return manager.submit_input_job(
-            input_file=input_path,
-            original_filename=input_file.filename,
+        return manager.submit_input_files_job(
+            input_files=input_paths,
+            original_filenames=[uploaded_file.filename for uploaded_file in uploaded_files],
             bucket_name=bucket_name,
             split_count=split_count,
             r_partitions=r_partitions,
@@ -94,4 +103,5 @@ def submit_job(
         ) from exc
 
     finally:
-        input_path.unlink(missing_ok=True)
+        for input_path in input_paths:
+            input_path.unlink(missing_ok=True)

@@ -93,7 +93,7 @@ def _content_type_for_path(input_path: Path) -> str:
 
 
 def jobs_submit(
-    input_file: str,
+    input_file: list[str],
     split_count: int,
     r_partitions: int,
     case_sensitive: bool,
@@ -105,18 +105,25 @@ def jobs_submit(
     if headers is None:
         return
 
-    input_path = Path(input_file)
-    if not input_path.exists():
-        print(f"Input file does not exist: {input_path}")
-        return
+    input_paths = [Path(path) for path in input_file]
+    for input_path in input_paths:
+        if not input_path.exists():
+            print(f"Input file does not exist: {input_path}")
+            return
 
-    with input_path.open("rb") as file:
+    open_files = []
+    try:
+        files = []
+        for input_path in input_paths:
+            file = input_path.open("rb")
+            open_files.append(file)
+            field_name = "input_files" if len(input_paths) > 1 else "input_file"
+            files.append((field_name, (input_path.name, file, _content_type_for_path(input_path))))
+
         response = requests.post(
             f"{UI_SERVICE_URL}/jobs/submit_job",
             headers=headers,
-            files={
-                "input_file": (input_path.name, file, _content_type_for_path(input_path)),
-            },
+            files=files,
             data={
                 "split_count": str(split_count),
                 "r_partitions": str(r_partitions),
@@ -127,6 +134,9 @@ def jobs_submit(
             },
             timeout=REQUEST_TIMEOUT_SECONDS,
         )
+    finally:
+        for file in open_files:
+            file.close()
 
     print("Status:", response.status_code)
     print(response.text)
@@ -236,7 +246,7 @@ def main() -> None:
     jobs_subparsers.add_parser("list")
 
     jobs_submit_parser = jobs_subparsers.add_parser("submit")
-    jobs_submit_parser.add_argument("--input_file", required=True)
+    jobs_submit_parser.add_argument("--input_file", required=True, nargs="+")
     jobs_submit_parser.add_argument("--split_count", type=int, default=4)
     jobs_submit_parser.add_argument("--r_partitions", type=int, default=3)
     jobs_submit_parser.add_argument("--case_sensitive", action="store_true")

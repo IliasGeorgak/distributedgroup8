@@ -9,7 +9,7 @@ from applications import get_reducer
 from partitioner import PARTITION_FUNCTIONS, get_partition_function, normalize_key
 
 
-def _extract_intermediate_pairs(payload: Any, source_path: Path) -> tuple[int, list[tuple[Any, int]]]:
+def _extract_intermediate_pairs(payload: Any, source_path: Path) -> tuple[int, list[tuple[Any, Any]]]:
     
     if not isinstance(payload, dict):
         raise ValueError(f"Reduce input must be a JSON object: {source_path}")
@@ -24,16 +24,16 @@ def _extract_intermediate_pairs(payload: Any, source_path: Path) -> tuple[int, l
     if not isinstance(raw_pairs, list):
         raise ValueError(f"'intermediate_pairs' must be a list in {source_path}")
 
-    pairs: list[tuple[Any, int]] = []
+    pairs: list[tuple[Any, Any]] = []
     for pair in raw_pairs:
         if not isinstance(pair, list) or len(pair) != 2:
             raise ValueError(f"Each intermediate pair must be [key, value] in {source_path}")
         key, value = pair
-        pairs.append((normalize_key(key), int(value)))
+        pairs.append((normalize_key(key), value))
     return partition_id, pairs
 
 
-def _iter_jsonl_intermediate_pairs(source_path: Path) -> Iterable[tuple[int, Any, int]]:
+def _iter_jsonl_intermediate_pairs(source_path: Path) -> Iterable[tuple[int, Any, Any]]:
     partition_id: int | None = None
 
     with source_path.open("r", encoding="utf-8") as input_file:
@@ -57,10 +57,10 @@ def _iter_jsonl_intermediate_pairs(source_path: Path) -> Iterable[tuple[int, Any
                 raise ValueError(f"Each JSONL intermediate pair must be [key, value] in {source_path}")
 
             key, value = payload
-            yield partition_id, normalize_key(key), int(value)
+            yield partition_id, normalize_key(key), value
 
 
-def _iter_intermediate_pairs(source_path: Path) -> Iterable[tuple[int, Any, int]]:
+def _iter_intermediate_pairs(source_path: Path) -> Iterable[tuple[int, Any, Any]]:
     if source_path.suffix.lower() == ".jsonl":
         yield from _iter_jsonl_intermediate_pairs(source_path)
         return
@@ -84,7 +84,7 @@ def reduce_partitioned_word_count(input_paths: list[Path], parameters: dict[str,
     get_partition_function(partition_function_name)
     reducer = get_reducer(parameters)
 
-    partitioned_key_values: dict[int, dict[Any, list[int]]] = {
+    partitioned_key_values: dict[int, dict[Any, list[Any]]] = {
         partition_id: defaultdict(list) for partition_id in range(r_partitions)
     }
 

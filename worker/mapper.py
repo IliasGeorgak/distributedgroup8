@@ -14,19 +14,65 @@ def map_to_key_value_pairs(input_paths: list[Path], parameters: dict[str, Any]) 
     split_count = max(1, requested_splits)
 
     mapper = get_mapper(parameters)
-    key_value_counts: dict[Any, int] = defaultdict(int)
+    key_value_counts: dict[Any, Any] = defaultdict(int)
     pair_count = 0
 
-    for record in iter_input_records(input_paths, parameters):
-        for key, value in mapper(record, parameters):
-            key_value_counts[normalize_key(key)] += int(value)
-            pair_count += 1
+    if _operation(parameters) == "inverted_index":
+        for input_path, record in _iter_records_with_document_id(input_paths, parameters):
+            for key, value in mapper(record, parameters):
+                normalized_key = normalize_key(key)
+                document_id = str(value)
+                counts = key_value_counts.setdefault(normalized_key, {})
+                counts[document_id] = counts.get(document_id, 0) + 1
+                pair_count += 1
+    else:
+        for record in iter_input_records(input_paths, parameters):
+            for key, value in mapper(record, parameters):
+                key_value_counts[normalize_key(key)] += int(value)
+                pair_count += 1
 
     return {
         "m_splits": split_count,
         "split_metadata": [{"split_id": 0, "pair_count": pair_count}],
-        "intermediate_pairs": [[key, count] for key, count in key_value_counts.items()],
+        "intermediate_pairs": [[key, value] for key, value in key_value_counts.items()],
     }
+
+
+def _operation(parameters: dict[str, Any]) -> str:
+    return str(parameters.get("operation", "word_count")).lower()
+
+
+def _document_id_for_path(input_path: Path, parameters: dict[str, Any]) -> str:
+    document_ids = parameters.get("document_ids")
+    if isinstance(document_ids, dict):
+        path_keys = [
+            str(input_path),
+            input_path.name,
+            input_path.stem,
+        ]
+        for key in path_keys:
+            if key in document_ids:
+                return str(document_ids[key])
+    if "document_id" in parameters:
+        return str(parameters["document_id"])
+    return input_path.stem
+
+
+def _iter_records_with_document_id(
+    input_paths: list[Path],
+    parameters: dict[str, Any],
+):
+    for input_path in input_paths:
+        document_id = _document_id_for_path(input_path, parameters)
+        per_file_parameters = dict(parameters)
+        per_file_parameters["document_id"] = document_id
+        for record in iter_input_records([input_path], per_file_parameters):
+            if isinstance(record, dict):
+                enriched_record = dict(record)
+                enriched_record.setdefault("document_id", document_id)
+                yield input_path, enriched_record
+            else:
+                yield input_path, {"text": record, "document_id": document_id}
 
 
 def stream_to_shuffle_partitions(
@@ -55,11 +101,17 @@ def stream_to_shuffle_partitions(
     ]
     partition_pair_counts = [0 for _ in range(r_partitions)]
     total_pair_count = 0
-    combined_counts: list[dict[Any, int]] = [defaultdict(int) for _ in range(r_partitions)]
+    operation = _operation(parameters)
+    combined_counts: list[dict[Any, Any]] = [defaultdict(int) for _ in range(r_partitions)]
 
     def flush_combiner() -> None:
         for partition_id, counts in enumerate(combined_counts):
             for key, value in counts.items():
+                if isinstance(value, dict):
+                    value = {
+                        document_id: value[document_id]
+                        for document_id in sorted(value)
+                    }
                 handles[partition_id].write(json.dumps([key, value]) + "\n")
                 partition_pair_counts[partition_id] += 1
             counts.clear()
@@ -70,13 +122,23 @@ def stream_to_shuffle_partitions(
             handle.write(json.dumps({"map_task_id": map_task_id, "partition_id": partition_id}) + "\n")
 
         distinct_pair_count = 0
-        for record in iter_input_records(input_paths, parameters):
+        records = (
+            (record for _, record in _iter_records_with_document_id(input_paths, parameters))
+            if operation == "inverted_index"
+            else iter_input_records(input_paths, parameters)
+        )
+        for record in records:
             for key, value in mapper(record, parameters):
                 key = normalize_key(key)
                 partition_id = hash_function(key) % r_partitions
                 if key not in combined_counts[partition_id]:
                     distinct_pair_count += 1
-                combined_counts[partition_id][key] += int(value)
+                if operation == "inverted_index":
+                    document_id = str(value)
+                    counts = combined_counts[partition_id].setdefault(key, {})
+                    counts[document_id] = counts.get(document_id, 0) + 1
+                else:
+                    combined_counts[partition_id][key] += int(value)
                 total_pair_count += 1
                 if distinct_pair_count >= combiner_flush_limit:
                     flush_combiner()

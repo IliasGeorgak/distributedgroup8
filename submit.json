@@ -1,0 +1,6 @@
+{
+  "input_file":"demo-input.txt",
+  "split_count":16,
+  "r_partitions":8,
+  "operation":"word_count"
+}

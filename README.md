@@ -2,7 +2,7 @@
 
 This project is a small distributed MapReduce system built around Kubernetes Jobs. It includes authentication, a UI/API gateway, a manager service, worker containers, PostgreSQL metadata storage, and MinIO object storage.
 
-The main demo workload is word count, but the worker also supports other simple operations such as line count through the same map/reduce pipeline.
+The main demo workload is word count, and the framework also supports line count and inverted index through the same map/reduce pipeline.
 
 ## Architecture
 
@@ -147,6 +147,29 @@ python cli/cli.py jobs submit \
   --input_format auto \
   --partition_function sha256
 ```
+
+Submit an inverted-index job:
+
+```bash
+python cli/cli.py jobs submit \
+  --input_file doc1.txt doc2.txt \
+  --split_count 4 \
+  --r_partitions 3 \
+  --operation inverted_index \
+  --input_format auto \
+  --partition_function sha256
+```
+
+The inverted-index reducer emits JSON entries in this shape:
+
+```json
+[
+  ["hello", ["doc1"]],
+  ["world", ["doc1", "doc2"]]
+]
+```
+
+Set `index_with_frequencies=true` in task parameters to emit per-document counts instead of plain document lists.
 
 Check job status:
 
