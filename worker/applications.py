@@ -116,11 +116,60 @@ def inverted_index_reducer(key: Any, values: list[Any], parameters: dict[str, An
         }
     return sorted(document_counts)
 
+def _parse_log_line(record: Any) -> dict[str, str] | None:
+    text = _record_text(record, {})
+    parts = text.strip().split()
+    if len(parts) < 6:
+        return None
+
+    return {
+        "timestamp": parts[0],
+        "ip": parts[1],
+        "method": parts[2],
+        "endpoint": parts[3],
+        "status": parts[4],
+        "latency": parts[5],
+    }
+
+
+def status_count_mapper(record: Any, parameters: dict[str, Any]):
+    parsed = _parse_log_line(record)
+    if parsed is None:
+        return
+    yield parsed["status"], 1
+
+
+def endpoint_count_mapper(record: Any, parameters: dict[str, Any]):
+    parsed = _parse_log_line(record)
+    if parsed is None:
+        return
+    yield parsed["endpoint"], 1
+
+
+def method_count_mapper(record: Any, parameters: dict[str, Any]):
+    parsed = _parse_log_line(record)
+    if parsed is None:
+        return
+    yield parsed["method"], 1
+
+
+def error_count_mapper(record: Any, parameters: dict[str, Any]):
+    parsed = _parse_log_line(record)
+    if parsed is None:
+        return
+
+    status = int(parsed["status"])
+    if status >= 400:
+        yield parsed["status"], 1
 
 MAPPER_FUNCTIONS: dict[str, MapperFunction] = {
     "word_count": word_count_mapper,
     "line_count": line_count_mapper,
     "inverted_index": inverted_index_mapper,
+    "status_count": status_count_mapper,
+    "endpoint_count": endpoint_count_mapper,
+    "method_count": method_count_mapper,
+    "error_count": error_count_mapper,
 }
 
 REDUCER_FUNCTIONS: dict[str, ReducerFunction] = {
@@ -128,8 +177,11 @@ REDUCER_FUNCTIONS: dict[str, ReducerFunction] = {
     "word_count": sum_reducer,
     "line_count": sum_reducer,
     "inverted_index": inverted_index_reducer,
+    "status_count": sum_reducer,
+    "endpoint_count": sum_reducer,
+    "method_count": sum_reducer,
+    "error_count": sum_reducer,
 }
-
 
 def get_mapper(parameters: dict[str, Any]) -> MapperFunction:
     custom_mapper = parameters.get("mapper")

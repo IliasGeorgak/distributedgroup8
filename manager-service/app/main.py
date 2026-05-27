@@ -9,7 +9,7 @@ app = FastAPI()
 DEFAULT_BUCKET = os.getenv("MANAGER_DEFAULT_BUCKET", "mapreduce")
 SUPPORTED_INPUT_SUFFIXES = {
     suffix.strip().lower()
-    for suffix in os.getenv("MANAGER_SUPPORTED_INPUT_SUFFIXES", ".txt,.jsonl,.json").split(",")
+    for suffix in os.getenv("MANAGER_SUPPORTED_INPUT_SUFFIXES", ".txt,.jsonl,.json,.log").split(",")
     if suffix.strip()
 }
 database =db.Database()
