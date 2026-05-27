@@ -1,7 +1,9 @@
 # cli.py
 import argparse
+import base64
 import json
 import os
+import time
 from pathlib import Path
 
 import requests
@@ -9,6 +11,7 @@ import requests
 UI_SERVICE_URL = os.environ["MAPREDUCE_UI_SERVICE_URL"].rstrip("/")
 TOKEN_FILE = Path(os.getenv("MAPREDUCE_TOKEN_FILE", ".mapreduce_token.json"))
 REQUEST_TIMEOUT_SECONDS = float(os.getenv("MAPREDUCE_REQUEST_TIMEOUT_SECONDS", "30"))
+TOKEN_REFRESH_THRESHOLD_SECONDS = int(os.getenv("MAPREDUCE_TOKEN_REFRESH_THRESHOLD_SECONDS", "60"))
 
 
 def save_token(token_data: dict) -> None:
@@ -22,11 +25,48 @@ def load_token() -> str | None:
     data = json.loads(TOKEN_FILE.read_text(encoding="utf-8"))
     return data.get("access_token")
 
+def decode_jwt_payload(token: str) -> dict:
+    payload = token.split(".")[1]
+    payload += "=" * (-len(payload) % 4)
+    return json.loads(base64.urlsafe_b64decode(payload))
+
+def token_expires_soon(token: str) -> bool:
+    try:
+        payload = decode_jwt_payload(token)
+        exp = int(payload["exp"])
+        return exp - time.time() < TOKEN_REFRESH_THRESHOLD_SECONDS
+    except Exception:
+        return True
+
+def refresh_token(token: str) -> str | None:
+    try:
+        response = requests.post(
+            f"{UI_SERVICE_URL}/auth/refresh",
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=REQUEST_TIMEOUT_SECONDS,
+        )
+    except requests.RequestException:
+        return None
+
+    if response.status_code != 200:
+        return None
+
+    token_data = response.json()
+    save_token(token_data)
+    return token_data.get("access_token")
+
 def get_auth_headers() -> dict[str, str] | None:
     token = load_token()
     if not token:
         print("You are not logged in. Run: python cli.py auth login --username ... --password ...")
         return None
+
+    if token_expires_soon(token):
+        refreshed_token = refresh_token(token)
+        if refreshed_token is None:
+            print("Session expired. Run: python cli.py auth login --username ... --password ...")
+            return None
+        token = refreshed_token
 
     return {"Authorization": f"Bearer {token}"}
 

@@ -54,7 +54,10 @@ class Kuber:
             worker_id=worker_id,
             image=image,
             image_pull_policy=self.image_pull_policy,
-            args=args
+            args=args,
+            ttl_seconds_after_finished=int(
+                os.getenv("WORKER_JOB_TTL_SECONDS_AFTER_FINISHED", "30")
+            ),
         )
         return rendered_yaml
 
@@ -122,9 +125,18 @@ class Kuber:
         return True
 
     def exec(self,task_metadata: TaskRecord) -> bool:
-        rendered_yaml = self.render_worker_yaml(task_metadata)
-        job_name = self.create_worker(rendered_yaml)
+        job_name = self.submit_task(task_metadata)
         return self.wait_for_job_completion(job_name)
+
+    def submit_task(self, task_metadata: TaskRecord) -> str:
+        rendered_yaml = self.render_worker_yaml(task_metadata)
+        return self.create_worker(rendered_yaml)
+
+    def wait_for_tasks(self, task_jobs: dict[str, str]) -> dict[str, bool]:
+        return {
+            task_id: self.wait_for_job_completion(job_name)
+            for task_id, job_name in task_jobs.items()
+        }
 
 if __name__ == "__main__":
     kuber = Kuber()

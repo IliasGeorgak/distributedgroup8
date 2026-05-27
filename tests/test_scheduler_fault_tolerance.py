@@ -1,10 +1,15 @@
 from pathlib import Path
 import sys
+import types
 
 import pytest
 
 MANAGER_SERVICE_PATH = str(Path(__file__).resolve().parents[1] / "manager-service")
 sys.path.insert(0, MANAGER_SERVICE_PATH)
+
+fake_k8 = types.ModuleType("k8")
+fake_k8.Kuber = object
+sys.modules["k8"] = fake_k8
 
 from scheduler import Scheduler
 
@@ -40,6 +45,19 @@ class FakeDatabase:
         self.events.append(("failed-attempt", external_task_id, worker_id, max_attempts))
 
 
+class FakeParallelKuber:
+    def __init__(self):
+        self.events = []
+
+    def submit_task(self, task):
+        self.events.append(("submit", task.task_id))
+        return f"k8s-{task.task_id}"
+
+    def wait_for_tasks(self, task_jobs):
+        self.events.append(("wait", tuple(task_jobs)))
+        return {task_id: True for task_id in task_jobs}
+
+
 def _map_task(task_id="job-1-map-1"):
     return {
         "task_id": task_id,
@@ -50,6 +68,24 @@ def _map_task(task_id="job-1-map-1"):
         "output_object": f"results/{task_id}.json",
         "parameters": {},
     }
+
+
+def test_scheduler_submits_all_phase_tasks_before_waiting():
+    kuber = FakeParallelKuber()
+    scheduler = Scheduler(kuber=kuber)
+
+    scheduler.run_map_stage([
+        _map_task("job-1-map-1"),
+        _map_task("job-1-map-2"),
+        _map_task("job-1-map-3"),
+    ])
+
+    assert kuber.events == [
+        ("submit", "job-1-map-1"),
+        ("submit", "job-1-map-2"),
+        ("submit", "job-1-map-3"),
+        ("wait", ("job-1-map-1", "job-1-map-2", "job-1-map-3")),
+    ]
 
 
 def test_scheduler_retries_failed_task_before_completing():

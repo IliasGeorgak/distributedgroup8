@@ -111,3 +111,12 @@ def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), db:
         data = {"sub":user.email, "role":user.role}, expires_delta=access_token_expires
     )
     return {"access_token":access_token,"token_type":"bearer"}
+
+@app.post("/refresh", response_model=Token)
+def refresh_access_token(current_user: Users = Depends(get_current_user)):
+    access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token = create_access_token(
+        data={"sub": current_user.email, "role": current_user.role},
+        expires_delta=access_token_expires,
+    )
+    return {"access_token": access_token, "token_type": "bearer"}

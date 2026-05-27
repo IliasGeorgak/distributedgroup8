@@ -12,6 +12,7 @@ port = os.environ["AUTH_PORT"] #8080
 AUTH_SERVICE_URL = f"http://{host}:{port}"
 AUTH_SERVICE_LOGIN_URL = f"http://{host}:{port}/token"
 AUTH_SERVICE_REGISTER_URL = f"http://{host}:{port}/register"
+AUTH_SERVICE_REFRESH_URL = f"http://{host}:{port}/refresh"
 MANAGER_SERVICE_URL = os.getenv("MANAGER_SERVICE_URL", "http://manager-service:8000")
 
 app = FastAPI()
@@ -19,6 +20,25 @@ app = FastAPI()
 @app.get("/")
 def home():
     return {"Hello":"World"}
+
+@app.post("/auth/refresh")
+def refresh(authorization: str | None = Header(default=None)):
+    if not authorization:
+        raise HTTPException(status_code=401, detail="Missing token")
+
+    try:
+        response = requests.post(
+            AUTH_SERVICE_REFRESH_URL,
+            headers={"Authorization": authorization},
+            timeout=5,
+        )
+    except requests.RequestException:
+        raise HTTPException(status_code=503, detail="Authentication service unavailable")
+
+    if response.status_code != 200:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+
+    return response.json()
 
 @app.post("/auth/register")
 def register(data: UserCreateRequest2):

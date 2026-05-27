@@ -60,6 +60,8 @@ class Database:
                 cursor.execute("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS partition_function TEXT DEFAULT 'sha256';")
                 cursor.execute("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS retry_count INTEGER DEFAULT 0;")
                 cursor.execute("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;")
+                cursor.execute("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS started_at TIMESTAMP;")
+                cursor.execute("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS completed_at TIMESTAMP;")
 
                 cursor.execute(
                     """
@@ -306,15 +308,31 @@ class Database:
         return self._task_row_to_dict(row)
 
     def update_job_status(self, job_id: int, status: str) -> dict[str, Any]:
+        started_at_sql = (
+            ", started_at = COALESCE(started_at, CURRENT_TIMESTAMP)"
+            if status in {"running", "running_map", "running_reduce"}
+            else ""
+        )
+        completed_at_sql = (
+            ", completed_at = CURRENT_TIMESTAMP"
+            if status in {"completed", "failed"}
+            else ""
+        )
+
         with self.get_connection() as conn:
             with conn.cursor() as cursor:
                 cursor.execute(
-                    """
+                    f"""
                     UPDATE jobs
                     SET status = %s,
                         updated_at = CURRENT_TIMESTAMP
+                        {started_at_sql}
+                        {completed_at_sql}
                     WHERE job_id = %s
-                    RETURNING job_id, status, created_at;
+                    RETURNING job_id, status, created_at, started_at, completed_at,
+                              EXTRACT(EPOCH FROM (
+                                  COALESCE(completed_at, CURRENT_TIMESTAMP) - started_at
+                              ));
                     """,
                     (status, job_id),
                 )
@@ -327,6 +345,9 @@ class Database:
             "job_id": row[0],
             "status": row[1],
             "created_at": row[2],
+            "started_at": row[3],
+            "completed_at": row[4],
+            "duration_seconds": float(row[5]) if row[5] is not None else None,
         }
 
     def recover_stale_running_jobs(self, stale_after_seconds: int) -> int:
@@ -380,11 +401,19 @@ class Database:
                             THEN 'submitted'
                             ELSE 'failed'
                         END,
+                        completed_at = CASE
+                            WHEN COALESCE(retry_count, 0) + 1 < %s
+                            THEN completed_at
+                            ELSE CURRENT_TIMESTAMP
+                        END,
                         updated_at = CURRENT_TIMESTAMP
                     WHERE job_id = %s
-                    RETURNING job_id, status, created_at;
+                    RETURNING job_id, status, created_at, started_at, completed_at,
+                              EXTRACT(EPOCH FROM (
+                                  COALESCE(completed_at, CURRENT_TIMESTAMP) - started_at
+                              ));
                     """,
-                    (max_attempts, job_id),
+                    (max_attempts, max_attempts, job_id),
                 )
                 row = cursor.fetchone()
             conn.commit()
@@ -395,6 +424,9 @@ class Database:
             "job_id": row[0],
             "status": row[1],
             "created_at": row[2],
+            "started_at": row[3],
+            "completed_at": row[4],
+            "duration_seconds": float(row[5]) if row[5] is not None else None,
         }
 
     @staticmethod
@@ -412,7 +444,10 @@ class Database:
             with conn.cursor() as cursor:
                 cursor.execute(
                     """
-                    SELECT job_id, status, created_at
+                    SELECT job_id, status, created_at, started_at, completed_at,
+                           EXTRACT(EPOCH FROM (
+                               COALESCE(completed_at, CURRENT_TIMESTAMP) - started_at
+                           ))
                     FROM jobs
                     WHERE job_id = %s
                     """,
@@ -426,7 +461,10 @@ class Database:
             return {
                 "job_id": row[0],
                 "status": row[1],
-                "created_at": row[2]
+                "created_at": row[2],
+                "started_at": row[3],
+                "completed_at": row[4],
+                "duration_seconds": float(row[5]) if row[5] is not None else None,
             }
         
     def get_job_tasks_status(self, job_id: int) -> dict:
@@ -532,6 +570,7 @@ class Database:
                     """
                     UPDATE jobs
                     SET status = 'running',
+                        started_at = COALESCE(started_at, CURRENT_TIMESTAMP),
                         updated_at = CURRENT_TIMESTAMP
                     WHERE job_id = (
                         SELECT job_id
