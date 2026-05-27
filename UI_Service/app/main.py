@@ -2,9 +2,15 @@ from fastapi import FastAPI, Depends, HTTPException, Header, UploadFile, Form, F
 from app.schemas.auth import LoginRequest, UserCreateRequest, UserCreateRequest2
 from app.core.auth_client import get_current_user, get_current_admin
 from dotenv import load_dotenv
+import logging
 import requests
 import os
+<<<<<<< HEAD
 from requests_toolbelt import MultipartEncoder
+=======
+from urllib.parse import urlparse
+from threading import Lock
+>>>>>>> load_balancing
 
 load_dotenv()
 
@@ -13,34 +19,71 @@ port = os.environ["AUTH_PORT"] #8080
 AUTH_SERVICE_URL = f"http://{host}:{port}"
 AUTH_SERVICE_LOGIN_URL = f"http://{host}:{port}/token"
 AUTH_SERVICE_REGISTER_URL = f"http://{host}:{port}/register"
-AUTH_SERVICE_REFRESH_URL = f"http://{host}:{port}/refresh"
 MANAGER_SERVICE_URL = os.getenv("MANAGER_SERVICE_URL", "http://manager-service:8000")
+<<<<<<< HEAD
 MANAGER_REQUEST_TIMEOUT_SECONDS = float(os.getenv("UI_MANAGER_REQUEST_TIMEOUT_SECONDS", "900"))
+=======
+MANAGER_REPLICAS = [
+    url.strip().rstrip("/")
+    for url in os.getenv("MANAGER_REPLICAS", "").split(",")
+    if url.strip()
+]
+MANAGER_REQUEST_TIMEOUT_SECONDS = float(os.getenv("MANAGER_REQUEST_TIMEOUT_SECONDS", "30"))
+
+logger = logging.getLogger("ui.manager_lb")
+logger.setLevel(logging.INFO)
+_manager_replica_lock = Lock()
+_manager_replica_index = 0
+>>>>>>> load_balancing
 
 app = FastAPI()
+
+
+def _manager_submit_candidates() -> list[str]:
+    global _manager_replica_index
+
+    if not MANAGER_REPLICAS:
+        return [MANAGER_SERVICE_URL.rstrip("/")]
+
+    with _manager_replica_lock:
+        selected_index = _manager_replica_index
+        _manager_replica_index = (_manager_replica_index + 1) % len(MANAGER_REPLICAS)
+
+    ordered_replicas = (
+        MANAGER_REPLICAS[selected_index:]
+        + MANAGER_REPLICAS[:selected_index]
+    )
+    fallback_url = MANAGER_SERVICE_URL.rstrip("/")
+    if fallback_url not in ordered_replicas:
+        ordered_replicas.append(fallback_url)
+
+    selected_replica_name = urlparse(ordered_replicas[0]).hostname or ordered_replicas[0]
+    logger.info("Selected manager replica: %s", selected_replica_name)
+    print(f"Selected manager replica: {selected_replica_name}", flush=True)
+    return ordered_replicas
+
+
+def _rewind_uploaded_files(uploaded_files: list[UploadFile]) -> None:
+    for uploaded_file in uploaded_files:
+        uploaded_file.file.seek(0)
+
+
+def _manager_files_payload(uploaded_files: list[UploadFile]):
+    return [
+        (
+            "input_files" if len(uploaded_files) > 1 else "input_file",
+            (
+                uploaded_file.filename,
+                uploaded_file.file,
+                uploaded_file.content_type or "text/plain",
+            ),
+        )
+        for uploaded_file in uploaded_files
+    ]
 
 @app.get("/")
 def home():
     return {"Hello":"World"}
-
-@app.post("/auth/refresh")
-def refresh(authorization: str | None = Header(default=None)):
-    if not authorization:
-        raise HTTPException(status_code=401, detail="Missing token")
-
-    try:
-        response = requests.post(
-            AUTH_SERVICE_REFRESH_URL,
-            headers={"Authorization": authorization},
-            timeout=5,
-        )
-    except requests.RequestException:
-        raise HTTPException(status_code=503, detail="Authentication service unavailable")
-
-    if response.status_code != 200:
-        raise HTTPException(status_code=401, detail="Invalid or expired token")
-
-    return response.json()
 
 @app.post("/auth/register")
 def register(data: UserCreateRequest2):
@@ -151,6 +194,7 @@ def submit_job(
     if not uploaded_files:
         raise HTTPException(status_code=400, detail="At least one input file is required")
 
+<<<<<<< HEAD
     fields = [
         (
             "input_files" if len(uploaded_files) > 1 else "input_file",
@@ -180,9 +224,52 @@ def submit_job(
             data=multipart,
             headers={"Content-Type": multipart.content_type},
             timeout=MANAGER_REQUEST_TIMEOUT_SECONDS,
+=======
+    data = {
+        "split_count": str(split_count),
+        "r_partitions": str(r_partitions),
+        "case_sensitive": str(case_sensitive).lower(),
+        "operation": operation,
+        "input_format": input_format,
+        "partition_function": partition_function,
+    }
+
+    response = None
+    manager_errors: list[str] = []
+    for manager_url in _manager_submit_candidates():
+        logger.info("Forwarding job submission to manager: %s", manager_url)
+        try:
+            _rewind_uploaded_files(uploaded_files)
+            response = requests.post(
+                f"{manager_url}/jobs/submit_job",
+                files=_manager_files_payload(uploaded_files),
+                data=data,
+                timeout=MANAGER_REQUEST_TIMEOUT_SECONDS,
+            )
+            if response.status_code in {502, 503, 504}:
+                manager_errors.append(f"{manager_url}: HTTP {response.status_code}")
+                logger.warning(
+                    "Manager replica returned unavailable status for job submission: %s (%s)",
+                    manager_url,
+                    response.status_code,
+                )
+                response = None
+                continue
+            break
+        except requests.RequestException as exc:
+            manager_errors.append(f"{manager_url}: {exc}")
+            logger.warning(
+                "Manager replica unavailable for job submission: %s (%s)",
+                manager_url,
+                exc,
+            )
+
+    if response is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Manager service unavailable; tried: " + "; ".join(manager_errors),
+>>>>>>> load_balancing
         )
-    except requests.RequestException:
-        raise HTTPException(status_code=503, detail="Manager service unavailable")
 
     if response.status_code != 200:
         raise HTTPException(status_code=response.status_code, detail=response.text)

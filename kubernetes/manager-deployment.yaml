@@ -70,8 +70,6 @@ spec:
           value: "${WORKER_IMAGE_PULL_POLICY}"
         - name: WORKER_JOB_TIMEOUT_SECONDS
           value: "${WORKER_JOB_TIMEOUT_SECONDS}"
-        - name: WORKER_JOB_TTL_SECONDS_AFTER_FINISHED
-          value: "${WORKER_JOB_TTL_SECONDS_AFTER_FINISHED}"
         - name: MANAGER_MAX_TASK_ATTEMPTS
           value: "${MANAGER_MAX_TASK_ATTEMPTS}"
         - name: MANAGER_MAX_JOB_ATTEMPTS
@@ -105,3 +103,22 @@ spec:
       port: ${MANAGER_PORT}
       targetPort: ${MANAGER_PORT}
   type: ClusterIP
+
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: manager-hpa
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: manager
+  minReplicas: 2
+  maxReplicas: 5
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70

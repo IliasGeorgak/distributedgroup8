@@ -70,8 +70,6 @@ spec:
           value: "Never"
         - name: WORKER_JOB_TIMEOUT_SECONDS
           value: "900"
-        - name: WORKER_JOB_TTL_SECONDS_AFTER_FINISHED
-          value: "30"
         - name: MANAGER_MAX_TASK_ATTEMPTS
           value: "3"
         - name: MANAGER_MAX_JOB_ATTEMPTS

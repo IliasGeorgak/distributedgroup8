@@ -1,6 +1,7 @@
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form, BackgroundTasks
 from pathlib import Path
-import os, shutil, tempfile
+import logging
+import os, shutil, tempfile, traceback
 from manager import ManagerService
 import db
 
@@ -13,6 +14,9 @@ SUPPORTED_INPUT_SUFFIXES = {
     if suffix.strip()
 }
 database =db.Database()
+logger = logging.getLogger("manager.submit")
+logger.setLevel(logging.INFO)
+MANAGER_REPLICA_ID = os.getenv("HOSTNAME", "manager")
 
 import threading
 
@@ -46,8 +50,32 @@ def job_results(job_id: int, bucket_name: str = DEFAULT_BUCKET):
     except Exception as exc:
         raise HTTPException(status_code=503, detail=f"Failed to retrieve job results: {exc}") from exc
 
+
+def execute_claimed_job(claimed_job: dict) -> None:
+    logger.info(
+        "Manager replica %s scheduling claimed job %s",
+        MANAGER_REPLICA_ID,
+        claimed_job["job_id"],
+    )
+    manager = ManagerService()
+    try:
+        manager.execute_submitted_job(claimed_job)
+    except Exception as exc:
+        logger.exception(
+            "Manager replica %s failed while scheduling job %s: %s",
+            MANAGER_REPLICA_ID,
+            claimed_job["job_id"],
+            exc,
+        )
+        traceback.print_exc()
+        manager.database.record_job_failure(
+            job_id=int(claimed_job["job_id"]),
+            max_attempts=manager.max_job_attempts,
+        )
+
 @app.post("/jobs/submit_job")
 def submit_job(
+    background_tasks: BackgroundTasks,
     input_file: UploadFile | None = File(None),
     input_files: list[UploadFile] | None = File(None),
     split_count: int = Form(4),
@@ -84,7 +112,7 @@ def submit_job(
             input_paths.append(Path(temp_file.name))
 
     try:
-        return manager.submit_input_files_job(
+        submitted_job = manager.submit_input_files_job(
             input_files=input_paths,
             original_filenames=[uploaded_file.filename for uploaded_file in uploaded_files],
             bucket_name=bucket_name,
@@ -95,6 +123,25 @@ def submit_job(
             input_format=input_format,
             partition_function=partition_function,
         )
+
+        claimed_job = manager.database.claim_submitted_job_by_id(
+            int(submitted_job["job_id"])
+        )
+        if claimed_job is not None:
+            logger.info(
+                "Manager replica %s claimed submitted job %s",
+                MANAGER_REPLICA_ID,
+                claimed_job["job_id"],
+            )
+            background_tasks.add_task(execute_claimed_job, claimed_job)
+        else:
+            logger.info(
+                "Manager replica %s submitted job %s; monitor fallback will schedule it",
+                MANAGER_REPLICA_ID,
+                submitted_job["job_id"],
+            )
+
+        return submitted_job
 
     except Exception as exc:
         raise HTTPException(
