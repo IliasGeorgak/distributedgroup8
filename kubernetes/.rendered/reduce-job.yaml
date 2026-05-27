@@ -9,7 +9,7 @@ spec:
 
       containers:
       - name: worker
-        image: worker:
+        image: worker:latest
         imagePullPolicy: Never
 
         envFrom:

@@ -7,6 +7,7 @@ import requests
 import os
 from urllib.parse import urlparse
 from threading import Lock
+from requests_toolbelt import MultipartEncoder
 
 load_dotenv()
 
@@ -61,17 +62,31 @@ def _rewind_uploaded_files(uploaded_files: list[UploadFile]) -> None:
 
 
 def _manager_files_payload(uploaded_files: list[UploadFile]):
-    return [
-        (
-            "input_files" if len(uploaded_files) > 1 else "input_file",
+    fields = []
+    for uploaded_file in uploaded_files:
+        fields.append(
             (
-                uploaded_file.filename,
-                uploaded_file.file,
-                uploaded_file.content_type or "text/plain",
-            ),
+                "input_files" if len(uploaded_files) > 1 else "input_file",
+                (
+                    uploaded_file.filename,
+                    uploaded_file.file,
+                    uploaded_file.content_type or "text/plain",
+                ),
+            )
         )
-        for uploaded_file in uploaded_files
-    ]
+    return fields
+
+
+def _manager_multipart_payload(
+    uploaded_files: list[UploadFile],
+    data: dict[str, str],
+) -> MultipartEncoder:
+    return MultipartEncoder(
+        fields=[
+            *_manager_files_payload(uploaded_files),
+            *data.items(),
+        ]
+    )
 
 @app.get("/")
 def home():
@@ -201,10 +216,11 @@ def submit_job(
         logger.info("Forwarding job submission to manager: %s", manager_url)
         try:
             _rewind_uploaded_files(uploaded_files)
+            multipart = _manager_multipart_payload(uploaded_files, data)
             response = requests.post(
                 f"{manager_url}/jobs/submit_job",
-                files=_manager_files_payload(uploaded_files),
-                data=data,
+                data=multipart,
+                headers={"Content-Type": multipart.content_type},
                 timeout=MANAGER_REQUEST_TIMEOUT_SECONDS,
             )
             if response.status_code in {502, 503, 504}:

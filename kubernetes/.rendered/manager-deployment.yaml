@@ -65,7 +65,7 @@ spec:
             name: minio-config
         env:
         - name: WORKER_IMAGE
-          value: "worker:"
+          value: "worker:latest"
         - name: WORKER_IMAGE_PULL_POLICY
           value: "Never"
         - name: WORKER_JOB_TIMEOUT_SECONDS
