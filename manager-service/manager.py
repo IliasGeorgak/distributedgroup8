@@ -678,20 +678,15 @@ class ManagerService:
         return all_split_objects, map_tasks
 
     def job_monitor_loop(self, poll_interval_seconds: float = 5.0) -> None:
+        self.database.init_schema()
+
         while True:
-            try:
-                self.database.init_schema()
-                self.database.recover_stale_running_jobs(self.stale_job_seconds)
-                self.database.recover_retryable_failed_jobs(
-                    max_attempts=self.max_job_attempts,
-                    retry_delay_seconds=self.failed_job_retry_delay_seconds,
-                )
-                job = self.database.claim_next_submitted_job()
-            except Exception as exc:
-                print(f"Job monitor waiting for database: {exc}", flush=True)
-                traceback.print_exc()
-                time.sleep(poll_interval_seconds)
-                continue
+            self.database.recover_stale_running_jobs(self.stale_job_seconds)
+            self.database.recover_retryable_failed_jobs(
+                max_attempts=self.max_job_attempts,
+                retry_delay_seconds=self.failed_job_retry_delay_seconds,
+            )
+            job = self.database.claim_next_submitted_job()
 
             if job is None:
                 time.sleep(poll_interval_seconds)

@@ -121,85 +121,51 @@ class Scheduler:
         attempts_by_task_id: dict[str, int] = defaultdict(int)
 
         while not self._phase_completed(task_type):
-            assigned_tasks = self._assign_all_tasks(task_type)
-
-            if not assigned_tasks:
-                raise RuntimeError(f"No available {task_type} task")
-
-            for task_rec in assigned_tasks:
-                self._mark_task_running(task_rec)
-
-            task_jobs: dict[str, str] = {}
-            task_results: dict[str, bool] = {}
-
-            for task_rec in assigned_tasks:
-                try:
-                    task_jobs[task_rec.task_id] = self._submit_task(task_rec)
-                except Exception:
-                    task_results[task_rec.task_id] = False
-
-            try:
-                task_results.update(self._wait_for_tasks(task_jobs))
-            except Exception:
-                for task_id in task_jobs:
-                    task_results.setdefault(task_id, False)
-
-            for task_rec in assigned_tasks:
-                task_succeeded = task_results.get(task_rec.task_id, False)
-
-                if not task_succeeded:
-                    attempts_by_task_id[task_rec.task_id] += 1
-                    attempts = attempts_by_task_id[task_rec.task_id]
-                    self._record_task_failure(task_rec, attempts)
-
-                    if attempts < self.max_task_attempts:
-                        self.master.mark_status(
-                            task_type,
-                            task_rec.task_id,
-                            TaskState.IDLE,
-                        )
-                        continue
-
-                    raise RuntimeError(
-                        f"{task_type} task {task_rec.task_id} failed after "
-                        f"{self.max_task_attempts} attempts"
-                    )
-
-                self.master.mark_status(
-                    task_type,
-                    task_rec.task_id,
-                    TaskState.COMPLETED,
-                    task_rec.worker_id,
-                )
-                self._mark_task_completed(task_rec)
-
-                results.append(str(task_rec.payload["output_object"]))
-
-        return results
-
-    def _assign_all_tasks(self, task_type: str) -> list[TaskRecord]:
-        assigned_tasks: list[TaskRecord] = []
-        while True:
             task_rec = (
                 self.master.assign_map_task()
                 if task_type == "map"
                 else self.master.assign_reduce_task()
             )
+
             if task_rec is None:
-                return assigned_tasks
-            assigned_tasks.append(task_rec)
+                raise RuntimeError(f"No available {task_type} task")
 
-    def _submit_task(self, task_rec: TaskRecord) -> str:
-        if hasattr(self.kuber, "submit_task"):
-            return self.kuber.submit_task(task_rec)
-        if self.kuber.exec(task_rec):
-            return task_rec.task_id
-        raise RuntimeError(f"Task {task_rec.task_id} failed")
+            self._mark_task_running(task_rec)
 
-    def _wait_for_tasks(self, task_jobs: dict[str, str]) -> dict[str, bool]:
-        if hasattr(self.kuber, "wait_for_tasks"):
-            return self.kuber.wait_for_tasks(task_jobs)
-        return {task_id: True for task_id in task_jobs}
+            try:
+                task_succeeded = self.execute_task(task_rec)
+            except Exception:
+                task_succeeded = False
+
+            if not task_succeeded:
+                attempts_by_task_id[task_rec.task_id] += 1
+                attempts = attempts_by_task_id[task_rec.task_id]
+                self._record_task_failure(task_rec, attempts)
+
+                if attempts < self.max_task_attempts:
+                    self.master.mark_status(
+                        task_type,
+                        task_rec.task_id,
+                        TaskState.IDLE,
+                    )
+                    continue
+
+                raise RuntimeError(
+                    f"{task_type} task {task_rec.task_id} failed after "
+                    f"{self.max_task_attempts} attempts"
+                )
+
+            self.master.mark_status(
+                task_type,
+                task_rec.task_id,
+                TaskState.COMPLETED,
+                task_rec.worker_id,
+            )
+            self._mark_task_completed(task_rec)
+
+            results.append(str(task_rec.payload["output_object"]))
+
+        return results
 
     def _mark_task_running(self, task_rec: TaskRecord) -> None:
         if self.database is None:
