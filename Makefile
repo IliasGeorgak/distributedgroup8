@@ -126,3 +126,14 @@ bench-results:
 	ab -n 500 -c 25 \
 	-H "Authorization: Bearer $$TOKEN" \
 	http://localhost:$(UI_PORT)/jobs/9/results
+
+
+# DEMO
+# python cli/cli.py jobs submit --input_file demo-logs-100mb.log --split_count 8 --r_partitions 4 --operation status_count --input_format text --partition_function sha256
+# python cli/cli.py jobs submit --input_file demo-logs-100mb.log --split_count 8 --r_partitions 4 --operation endpoint_count --input_format text --partition_function sha256
+# python cli/cli.py jobs submit --input_file demo-logs-100mb.log --split_count 8 --r_partitions 4 --operation method_count --input_format text --partition_function sha256
+# python cli/cli.py jobs submit --input_file demo-logs-100mb.log --split_count 8 --r_partitions 4 --operation error_count --input_format text --partition_function sha256
+# python cli/cli.py jobs submit --input_file demo-logs-500mb.log --split_count 16 --r_partitions 4 --operation status_count --input_format text --partition_function sha256
+# python cli/cli.py jobs submit --input_file demo-logs-500mb.log --split_count 16 --r_partitions 4 --operation endpoint_count --input_format text --partition_function sha256
+# python cli/cli.py jobs submit --input_file demo-logs-500mb.log --split_count 16 --r_partitions 4 --operation method_count --input_format text --partition_function sha256
+# python cli/cli.py jobs submit --input_file demo-logs-500mb.log --split_count 16 --r_partitions 4 --operation error_count --input_format text --partition_function sha256
