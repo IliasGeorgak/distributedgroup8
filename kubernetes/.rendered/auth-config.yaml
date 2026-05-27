@@ -15,4 +15,4 @@ metadata:
   name: auth-secret
 type: Opaque
 stringData:
-  SECRET_KEY: "change-me"
+  SECRET_KEY: "afbd8c862c2e1e694dc13939214b4f7c4d44c9bcb2f22a7dd142afb1c992de02"

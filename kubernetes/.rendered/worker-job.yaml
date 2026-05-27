@@ -29,4 +29,4 @@ spec:
 
         args:
           - "--task-json"
-          - '{task_id:map-1,task_type:map,input_bucket:mapreduce,input_objects:[inputs/input.txt],output_bucket:mapreduce,output_object:results/map-1.json,parameters:{operation:word_count,input_format:auto,case_sensitive:false,r_partitions:1,partition_function:sha256}}'
+          - '{"task_id":"map-1","task_type":"map","input_bucket":"mapreduce","input_objects":["inputs/input.txt"],"output_bucket":"mapreduce","output_object":"results/map-1.json","parameters":{"operation":"word_count","input_format":"auto","case_sensitive":false,"r_partitions":1,"partition_function":"sha256"}}'
