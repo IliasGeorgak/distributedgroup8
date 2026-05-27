@@ -13,3 +13,4 @@ Pygments==2.20.0
 pytest==9.0.3
 typing_extensions==4.15.0
 urllib3==2.6.3
+requests==2.33.1

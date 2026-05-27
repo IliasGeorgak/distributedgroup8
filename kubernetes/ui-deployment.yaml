@@ -25,12 +25,15 @@ spec:
             name: postgres-secret
         - configMapRef:
             name: auth-config
+        env:
+        - name: UI_MANAGER_REQUEST_TIMEOUT_SECONDS
+          value: "${UI_MANAGER_REQUEST_TIMEOUT_SECONDS}"
         resources:
           requests:
-            memory: "128Mi"
+            memory: "256Mi"
             cpu: "250m"
           limits:
-            memory: "256Mi"
+            memory: "1Gi"
             cpu: "500m"
 
 ---

@@ -4,6 +4,7 @@ from app.core.auth_client import get_current_user, get_current_admin
 from dotenv import load_dotenv
 import requests
 import os
+from requests_toolbelt import MultipartEncoder
 
 load_dotenv()
 
@@ -14,6 +15,7 @@ AUTH_SERVICE_LOGIN_URL = f"http://{host}:{port}/token"
 AUTH_SERVICE_REGISTER_URL = f"http://{host}:{port}/register"
 AUTH_SERVICE_REFRESH_URL = f"http://{host}:{port}/refresh"
 MANAGER_SERVICE_URL = os.getenv("MANAGER_SERVICE_URL", "http://manager-service:8000")
+MANAGER_REQUEST_TIMEOUT_SECONDS = float(os.getenv("UI_MANAGER_REQUEST_TIMEOUT_SECONDS", "900"))
 
 app = FastAPI()
 
@@ -149,7 +151,7 @@ def submit_job(
     if not uploaded_files:
         raise HTTPException(status_code=400, detail="At least one input file is required")
 
-    files = [
+    fields = [
         (
             "input_files" if len(uploaded_files) > 1 else "input_file",
             (
@@ -162,18 +164,22 @@ def submit_job(
     ]
 
     try:
+        multipart = MultipartEncoder(
+            fields=[
+                *fields,
+                ("split_count", str(split_count)),
+                ("r_partitions", str(r_partitions)),
+                ("case_sensitive", str(case_sensitive).lower()),
+                ("operation", operation),
+                ("input_format", input_format),
+                ("partition_function", partition_function),
+            ]
+        )
         response = requests.post(
             f"{MANAGER_SERVICE_URL}/jobs/submit_job",
-            files=files,
-            data={
-                "split_count": str(split_count),
-                "r_partitions": str(r_partitions),
-                "case_sensitive": str(case_sensitive).lower(),
-                "operation": operation,
-                "input_format": input_format,
-                "partition_function": partition_function,
-            },
-            timeout=30,
+            data=multipart,
+            headers={"Content-Type": multipart.content_type},
+            timeout=MANAGER_REQUEST_TIMEOUT_SECONDS,
         )
     except requests.RequestException:
         raise HTTPException(status_code=503, detail="Manager service unavailable")
