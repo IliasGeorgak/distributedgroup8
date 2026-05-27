@@ -5,12 +5,8 @@ from dotenv import load_dotenv
 import logging
 import requests
 import os
-<<<<<<< HEAD
-from requests_toolbelt import MultipartEncoder
-=======
 from urllib.parse import urlparse
 from threading import Lock
->>>>>>> load_balancing
 
 load_dotenv()
 
@@ -20,9 +16,6 @@ AUTH_SERVICE_URL = f"http://{host}:{port}"
 AUTH_SERVICE_LOGIN_URL = f"http://{host}:{port}/token"
 AUTH_SERVICE_REGISTER_URL = f"http://{host}:{port}/register"
 MANAGER_SERVICE_URL = os.getenv("MANAGER_SERVICE_URL", "http://manager-service:8000")
-<<<<<<< HEAD
-MANAGER_REQUEST_TIMEOUT_SECONDS = float(os.getenv("UI_MANAGER_REQUEST_TIMEOUT_SECONDS", "900"))
-=======
 MANAGER_REPLICAS = [
     url.strip().rstrip("/")
     for url in os.getenv("MANAGER_REPLICAS", "").split(",")
@@ -34,7 +27,6 @@ logger = logging.getLogger("ui.manager_lb")
 logger.setLevel(logging.INFO)
 _manager_replica_lock = Lock()
 _manager_replica_index = 0
->>>>>>> load_balancing
 
 app = FastAPI()
 
@@ -194,37 +186,6 @@ def submit_job(
     if not uploaded_files:
         raise HTTPException(status_code=400, detail="At least one input file is required")
 
-<<<<<<< HEAD
-    fields = [
-        (
-            "input_files" if len(uploaded_files) > 1 else "input_file",
-            (
-                uploaded_file.filename,
-                uploaded_file.file,
-                uploaded_file.content_type or "text/plain",
-            ),
-        )
-        for uploaded_file in uploaded_files
-    ]
-
-    try:
-        multipart = MultipartEncoder(
-            fields=[
-                *fields,
-                ("split_count", str(split_count)),
-                ("r_partitions", str(r_partitions)),
-                ("case_sensitive", str(case_sensitive).lower()),
-                ("operation", operation),
-                ("input_format", input_format),
-                ("partition_function", partition_function),
-            ]
-        )
-        response = requests.post(
-            f"{MANAGER_SERVICE_URL}/jobs/submit_job",
-            data=multipart,
-            headers={"Content-Type": multipart.content_type},
-            timeout=MANAGER_REQUEST_TIMEOUT_SECONDS,
-=======
     data = {
         "split_count": str(split_count),
         "r_partitions": str(r_partitions),
@@ -268,7 +229,6 @@ def submit_job(
         raise HTTPException(
             status_code=503,
             detail="Manager service unavailable; tried: " + "; ".join(manager_errors),
->>>>>>> load_balancing
         )
 
     if response.status_code != 200:

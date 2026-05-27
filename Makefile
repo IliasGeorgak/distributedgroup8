@@ -1,14 +1,12 @@
 K8S_DIR ?= kubernetes
 K8S_RENDERED_DIR ?= $(K8S_DIR)/.rendered
-REGISTRY ?= iliasgeorgak
 
-
-AUTH_IMAGE ?= $(REGISTRY)/dg8auth
-AUTH_IMAGE_PULL_POLICY ?= IfNotPresent
+AUTH_IMAGE ?= auth
+AUTH_IMAGE_PULL_POLICY ?= Never
 AUTH_PORT ?= 8080
 AUTH_SECRET_KEY ?= change-me
 
-MANAGER_IMAGE ?= $(REGISTRY)/dg8manager
+MANAGER_IMAGE ?= mngr
 MANAGER_IMAGE_PULL_POLICY ?= Never
 MANAGER_PORT ?= 8000
 MANAGER_SERVICE_URL ?= http://manager-service:8000
@@ -18,17 +16,16 @@ MANAGER_MAX_JOB_ATTEMPTS ?= 3
 MANAGER_FAILED_JOB_RETRY_DELAY_SECONDS ?= 5
 MANAGER_STALE_JOB_SECONDS ?= 300
 
-UI_IMAGE ?= $(REGISTRY)/dg8ui
-UI_IMAGE_PULL_POLICY ?= IfNotPresent
+UI_IMAGE ?= ui
+UI_IMAGE_PULL_POLICY ?= Never
 UI_PORT ?= 8081
-UI_MANAGER_REQUEST_TIMEOUT_SECONDS ?= 900
 
-WORKER_IMAGE ?= $(REGISTRY)/dg8postgres
-WORKER_IMAGE_PULL_POLICY ?= IfNotPresent
+WORKER_IMAGE ?= worker:latest
+WORKER_IMAGE_PULL_POLICY ?= Never
 WORKER_JOB_TIMEOUT_SECONDS ?= 900
 
-POSTGRES_IMAGE ?= $(REGISTRY)/dg8postgres
-POSTGRES_IMAGE_PULL_POLICY ?= IfNotPresent
+POSTGRES_IMAGE ?= db:latest
+POSTGRES_IMAGE_PULL_POLICY ?= Never
 POSTGRES_USER ?= postgres
 POSTGRES_PASSWORD ?= change-me
 POSTGRES_PASSWORD_BASE64 ?= change-me-base64
@@ -38,7 +35,7 @@ POSTGRES_DB ?= auth_db
 POSTGRES_JOBS_DB ?= jobsdb
 PGDATA ?= /var/lib/postgresql/data/pgdata
 
-MINIO_IMAGE ?= minio/minio
+MINIO_IMAGE ?= minio/minio:latest
 MINIO_ROOT_USER ?= admin
 MINIO_ROOT_PASSWORD ?= change-me
 MINIO_API_PORT ?= 9000
@@ -55,18 +52,18 @@ REDUCE_TASK_JSON ?= {"task_id":"reduce-0","task_type":"reduce","input_bucket":"m
 -include $(K8S_DIR)/.env
 export
 
-.PHONY: start build push render deploy restart forward db logs clean clean-render
+.PHONY: start build render deploy restart forward db logs clean clean-render
 
 start:
 	minikube start
 
 build: start
 	eval $$(minikube docker-env) && \
-	docker build -t $(AUTH_IMAGE):latest --build-arg AUTH_PORT=$(AUTH_PORT) ./Auth_Service && \
-	docker build -t $(MANAGER_IMAGE):latest --build-arg MANAGER_PORT=$(MANAGER_PORT) -f manager-service/Dockerfile . && \
-	docker build -t $(WORKER_IMAGE):latest -f worker/Dockerfile . && \
-	docker build -t $(UI_IMAGE):latest ./UI_Service && \
-	docker build -t $(POSTGRES_IMAGE):latest ./postgres
+	docker build -t $(AUTH_IMAGE) --build-arg AUTH_PORT=$(AUTH_PORT) ./Auth_Service && \
+	docker build -t $(MANAGER_IMAGE) --build-arg MANAGER_PORT=$(MANAGER_PORT) -f manager-service/Dockerfile . && \
+	docker build -t $(WORKER_IMAGE) -f worker/Dockerfile . && \
+	docker build -t $(UI_IMAGE) ./UI_Service && \
+	docker build -t $(POSTGRES_IMAGE) ./postgres
 
 render:
 	command -v envsubst >/dev/null 2>&1 || { echo "envsubst is required to render Kubernetes manifests"; exit 1; }
@@ -84,8 +81,7 @@ restart:
 	kubectl rollout restart deployment ui
 
 forward:
-	kubectl port-forward svc/auth-service $(AUTH_PORT):$(AUTH_PORT) & \
-	kubectl port-forward svc/manager-service $(MANAGER_PORT):$(MANAGER_PORT) & \
+# 	kubectl port-forward svc/auth-service $(AUTH_PORT):$(AUTH_PORT)
 	kubectl port-forward svc/ui-service $(UI_PORT):$(UI_PORT)
 
 db:
